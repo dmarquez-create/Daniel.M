@@ -104,6 +104,7 @@ const COLUMN_SYNONYMS = {
   tipo:              ["tipo_de_orden","tipo_orden","tipo","order_type"],
   fecha:             ["fecha_de_creacion","fecha_creacion","fecha","date"],
   fecha_atencion:    ["fecha_de_atencion","fecha_atencion","fecha_resolucion","fecha_de_resolucion","fecha_cierre","fecha_de_cierre"],
+  dias_atencion_col: ["dias_de_atencion","dias_atencion"],
   estatus:           ["estatus_final","estatus","status","estado"],
   tecnico:           ["tecnico","technician"],
   agente:            ["agente","agent"],
@@ -189,11 +190,16 @@ function processRows(rows) {
 
     if (!fecha || !tipo || !estatus) { skipped++; return null; }
 
-    // Días de atención: solo cuando la orden fue realizada y hay fecha de atención
+    // Días de atención: leer de columna O directamente si existe
     let dias_atencion = null;
-    if (estatus === "Realizado" && fechaAten) {
-      const diff = daysBetween(fecha, fechaAten);
-      dias_atencion = diff;
+    if (estatus === "Realizado") {
+      const colVal = headerMap.dias_atencion_col ? row[headerMap.dias_atencion_col] : null;
+      if (colVal !== null && colVal !== undefined && String(colVal).trim() !== "") {
+        const n = parseFloat(colVal);
+        if (!isNaN(n)) dias_atencion = n;
+      } else if (fechaAten) {
+        dias_atencion = daysBetween(fecha, fechaAten);
+      }
     }
 
     const motivo =
