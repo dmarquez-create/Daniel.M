@@ -1,0 +1,24 @@
+{
+  "name": "Nidix Operaciones",
+  "short_name": "Nidix Ops",
+  "description": "Dashboard de Operaciones Nidix Networks",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F1D36",
+  "theme_color": "#0F1D36",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='36' fill='%230F1D36'/><rect x='44' y='44' width='44' height='44' rx='8' fill='%233B7BF6'/><rect x='104' y='44' width='44' height='44' rx='8' fill='%233B7BF6' opacity='.6'/><rect x='44' y='104' width='44' height='44' rx='8' fill='%233B7BF6' opacity='.6'/><rect x='104' y='104' width='44' height='44' rx='8' fill='%233B7BF6'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%230F1D36'/><rect x='116' y='116' width='116' height='116' rx='20' fill='%233B7BF6'/><rect x='280' y='116' width='116' height='116' rx='20' fill='%233B7BF6' opacity='.6'/><rect x='116' y='280' width='116' height='116' rx='20' fill='%233B7BF6' opacity='.6'/><rect x='280' y='280' width='116' height='116' rx='20' fill='%233B7BF6'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
