@@ -350,6 +350,7 @@ function App(){
   const MW_PAGE_SIZE=50;
   const [mwInstPage,setMwInstPage]=useState(1);
   const [mwTicketsPage,setMwTicketsPage]=useState(1);
+  const [mwResumenPage,setMwResumenPage]=useState(1);
   const mwInstRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
     return mwInstData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.direccion_principal||"").toLowerCase().includes(q))&&(!mwInstEstadoFilter||r.instalado===mwInstEstadoFilter)&&(!mwInstZonaFilter||r.zona===mwInstZonaFilter));
@@ -376,12 +377,28 @@ function App(){
     });
     return [...map.entries()].map(([key,label])=>({key,label})).sort((a,b)=>a.label.localeCompare(b.label,"es"));
   },[mwTicketsData]);
+  const mwTicketsResumenAbiertos=useMemo(()=>{
+    const abiertos=mwTicketsData.filter(r=>r.estado!=="cerrado");
+    const map=new Map();
+    abiertos.forEach(r=>{
+      const zona=r.zona||"Sin zona";
+      const motivoKey=mwNormMotivo(r.motivo_asunto)||"(sin motivo)";
+      const motivoLabel=r.motivo_asunto||"Sin motivo/asunto";
+      const key=`${zona}|${motivoKey}`;
+      if(!map.has(key))map.set(key,{zona,motivo:motivoLabel,cantidad:0});
+      map.get(key).cantidad++;
+    });
+    const list=[...map.values()].sort((a,b)=>b.cantidad-a.cantidad||a.zona.localeCompare(b.zona,"es"));
+    const total=abiertos.length;
+    return{rows:list,total};
+  },[mwTicketsData]);
   const mwTicketsRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
     return mwTicketsData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.motivo_asunto||"").toLowerCase().includes(q))&&(!mwMotivoFilter||mwNormMotivo(r.motivo_asunto)===mwMotivoFilter)&&(!mwTicketEstadoFilter||(mwTicketEstadoFilter==="cerrado"?r.estado==="cerrado":r.estado!=="cerrado"))&&(!mwTicketZonaFilter||r.zona===mwTicketZonaFilter));
   },[mwTicketsData,mwSearch,mwMotivoFilter,mwTicketEstadoFilter,mwTicketZonaFilter]);
   useEffect(()=>{setMwInstPage(1);},[mwInstRows]);
   useEffect(()=>{setMwTicketsPage(1);},[mwTicketsRows]);
+  useEffect(()=>{setMwResumenPage(1);},[mwTicketsResumenAbiertos]);
   const asigActivasSet=useMemo(()=>new Set(asigList.filter(a=>a.estatus==="asignada").map(a=>`${a.tipo}|${a.orden_id}`)),[asigList]);
   const asigPendientes=useMemo(()=>{
     const q=asigSearch.trim().toLowerCase();
@@ -1509,6 +1526,40 @@ function App(){
                   <div className="odoo-kpi"><div className="odoo-kpi-label">Cerrados</div><div className="odoo-kpi-value" style={{color:"#1A7F4B"}}>{numFmt(totalCerrados)}</div></div>
                   <div className="odoo-kpi"><div className="odoo-kpi-label">Abiertos</div><div className="odoo-kpi-value" style={{color:"#D6453F"}}>{numFmt(totalAbiertos)}</div></div>
                 </div>
+                {(()=>{
+                  const resumenRows=mwTicketsResumenAbiertos.rows;
+                  const resumenTotal=mwTicketsResumenAbiertos.total;
+                  const resumenTotalPages=Math.max(1,Math.ceil(resumenRows.length/MW_PAGE_SIZE));
+                  const resumenPageSafe=Math.min(mwResumenPage,resumenTotalPages);
+                  const resumenPageRows=resumenRows.slice((resumenPageSafe-1)*MW_PAGE_SIZE,resumenPageSafe*MW_PAGE_SIZE);
+                  return(
+                    <div style={{marginBottom:20}}>
+                      <div className="chart-title" style={{marginBottom:8}}>Resumen de tickets abiertos por zona y motivo</div>
+                      <div className="odoo-table-wrap">
+                        <table className="odoo-table">
+                          <thead><tr><th>Zona</th><th>Motivo/Asunto</th><th>Cantidad</th><th>% de abiertos</th></tr></thead>
+                          <tbody>{resumenPageRows.map((r,i)=>(
+                            <tr key={`${r.zona}|${r.motivo}|${i}`}>
+                              <td style={{fontSize:12}}>{r.zona}</td>
+                              <td style={{fontSize:12,color:"var(--text-muted)"}}>{r.motivo}</td>
+                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600}}>{numFmt(r.cantidad)}</td>
+                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{resumenTotal>0?((r.cantidad/resumenTotal)*100).toFixed(1):"0.0"}%</td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                        {resumenRows.length===0&&<div style={{padding:"32px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay tickets abiertos en el período/filtro seleccionado.</div>}
+                      </div>
+                      {resumenRows.length>MW_PAGE_SIZE&&(
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
+                          <button className="btn btn-ghost" disabled={resumenPageSafe<=1} onClick={()=>setMwResumenPage(p=>Math.max(1,p-1))}>← Anterior</button>
+                          <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Página {resumenPageSafe} de {resumenTotalPages}</span>
+                          <button className="btn btn-ghost" disabled={resumenPageSafe>=resumenTotalPages} onClick={()=>setMwResumenPage(p=>Math.min(resumenTotalPages,p+1))}>Siguiente →</button>
+                          <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginLeft:"auto"}}>{resumenRows.length} combinaciones zona/motivo · {numFmt(resumenTotal)} tickets abiertos</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="odoo-table-wrap">
                   <table className="odoo-table">
                     <thead><tr><th>ID</th><th>Nombre</th><th>Fecha generado</th><th>Fecha cierre</th><th>Estado</th><th>Zona</th><th>Motivo/Asunto</th></tr></thead>
