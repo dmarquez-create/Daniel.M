@@ -656,7 +656,7 @@ function App(){
       }
     });
     return Array.from(map.values())
-      .map(z=>({name:z.name,diasInst:z.instN?z.instSum/z.instN:null,nInst:z.instN,slaInst:z.instN?(z.instSla/z.instN)*100:null,diasTick:z.tickN?z.tickSum/z.tickN:null,nTick:z.tickN,slaTick:z.tickN?(z.tickSla/z.tickN)*100:null}))
+      .map(z=>({name:z.name,diasInst:z.instN?z.instSum/z.instN:null,nInst:z.instN,slaInst:z.instN?(z.instSla/z.instN)*100:null,nInstSla:z.instSla,diasTick:z.tickN?z.tickSum/z.tickN:null,nTick:z.tickN,slaTick:z.tickN?(z.tickSla/z.tickN)*100:null,nTickSla:z.tickSla}))
       .filter(z=>z.nInst>0||z.nTick>0)
       .sort((a,b)=>(b.nInst+b.nTick)-(a.nInst+a.nTick)||a.name.localeCompare(b.name,"es"));
   },[byRange]);
@@ -2116,8 +2116,8 @@ function App(){
                       <tbody>{pageRows.map(z=>(
                         <tr key={z.name}>
                           <td style={{fontSize:12,fontWeight:500}}>{z.name}</td>
-                          {(tipoFilter==="todas"||tipoFilter==="Instalación")&&<><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasInst!==null?`${z.diasInst.toFixed(1)} (${numFmt(z.nInst)})`:"—"}</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,color:z.slaInst===null?"var(--text-dim)":z.slaInst>=SLA_META_PCT?"#1A7F4B":"#D6453F"}}>{z.slaInst!==null?`${z.slaInst.toFixed(1)}%`:"—"}</td></>}
-                          {(tipoFilter==="todas"||tipoFilter==="Ticket")&&<><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasTick!==null?`${z.diasTick.toFixed(1)} (${numFmt(z.nTick)})`:"—"}</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,color:z.slaTick===null?"var(--text-dim)":z.slaTick>=SLA_META_PCT?"#1A7F4B":"#D6453F"}}>{z.slaTick!==null?`${z.slaTick.toFixed(1)}%`:"—"}</td></>}
+                          {(tipoFilter==="todas"||tipoFilter==="Instalación")&&<><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasInst!==null?`${z.diasInst.toFixed(1)} (${numFmt(z.nInst)})`:"—"}</td><td title={z.slaInst!==null?`${numFmt(z.nInstSla)} de ${numFmt(z.nInst)} dentro del SLA (≤72h)`:undefined} style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,cursor:z.slaInst!==null?"help":undefined,color:z.slaInst===null?"var(--text-dim)":z.slaInst>=SLA_META_PCT?"#1A7F4B":"#D6453F"}}>{z.slaInst!==null?`${z.slaInst.toFixed(1)}%`:"—"}</td></>}
+                          {(tipoFilter==="todas"||tipoFilter==="Ticket")&&<><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasTick!==null?`${z.diasTick.toFixed(1)} (${numFmt(z.nTick)})`:"—"}</td><td title={z.slaTick!==null?`${numFmt(z.nTickSla)} de ${numFmt(z.nTick)} dentro del SLA (≤48h)`:undefined} style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,cursor:z.slaTick!==null?"help":undefined,color:z.slaTick===null?"var(--text-dim)":z.slaTick>=SLA_META_PCT?"#1A7F4B":"#D6453F"}}>{z.slaTick!==null?`${z.slaTick.toFixed(1)}%`:"—"}</td></>}
                         </tr>
                       ))}</tbody>
                     </table>
