@@ -617,6 +617,17 @@ function App(){
   const ticketsProjection=useMemo(()=>{if(!byRange.length||!monthStats.diasLaborados)return null;const realizados=byRange.filter(r=>r.tipo==="Ticket"&&r.estatus==="Realizado").length;const tasa=realizados/monthStats.diasLaborados;return{realizados,tasaDiaria:tasa,proyeccion:tasa*monthStats.diasHabiles};},[byRange,monthStats]);
   const diasAtencionInst=useMemo(()=>promedioAtencion(byRange,"Instalación"),[byRange]);
   const diasAtencionTick=useMemo(()=>promedioAtencion(byRange,"Ticket"),[byRange]);
+  // SLA de atención: Instalaciones 72 h (3 días), Tickets 48 h (2 días). Meta: ≥95% dentro del plazo.
+  const SLA_META_PCT=95;
+  const slaData=useMemo(()=>{
+    const calc=(tipo,limiteDias)=>{
+      const rows=byRange.filter(r=>r.tipo===tipo&&r.estatus==="Realizado"&&r.dias_atencion!==null&&r.dias_atencion!==undefined);
+      if(!rows.length)return null;
+      const dentro=rows.filter(r=>r.dias_atencion<=limiteDias).length;
+      return{pct:(dentro/rows.length)*100,dentro,total:rows.length};
+    };
+    return{inst:calc("Instalación",3),tick:calc("Ticket",2)};
+  },[byRange]);
   const promedioDiarioData=useMemo(()=>{if(!byRange.length||!monthStats.diasLaborados)return[];const{instR,tickR}=baseStats;const total=instR+tickR;return[{name:"Instalación",value:instR/monthStats.diasLaborados,pct:total?(instR/total)*100:0},{name:"Ticket",value:tickR/monthStats.diasLaborados,pct:total?(tickR/total)*100:0}];},[byRange,baseStats,monthStats]);
   const dailyOrdersData=useMemo(()=>{if(!byRange.length)return[];const buckets=new Map();byRange.filter(r=>r.estatus==="Realizado").forEach(r=>{if(!buckets.has(r.fecha))buckets.set(r.fecha,{fecha:r.fecha,label:dayLabel(r.fecha),"Instalación":0,"Ticket":0});buckets.get(r.fecha)[r.tipo]=(buckets.get(r.fecha)[r.tipo]||0)+1;});return Array.from(buckets.values()).sort((a,b)=>a.fecha.localeCompare(b.fecha));},[byRange]);
   const currentMonthLabel=useMemo(()=>{const opt=MONTH_OPTIONS.find(o=>o.key===month);return opt?opt.label.toLowerCase():"";},[month]);
@@ -637,15 +648,15 @@ function App(){
       if(!r.zona)return;
       const zn=r.zona.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ");
       if(!zn||zn==="sin zona")return;
-      if(!map.has(zn))map.set(zn,{name:r.zona.trim(),instSum:0,instN:0,tickSum:0,tickN:0});
+      if(!map.has(zn))map.set(zn,{name:r.zona.trim(),instSum:0,instN:0,instSla:0,tickSum:0,tickN:0,tickSla:0});
       const z=map.get(zn);
       if(r.estatus==="Realizado"&&r.dias_atencion!==null&&r.dias_atencion!==undefined){
-        if(r.tipo==="Instalación"){z.instSum+=r.dias_atencion;z.instN++;}
-        else{z.tickSum+=r.dias_atencion;z.tickN++;}
+        if(r.tipo==="Instalación"){z.instSum+=r.dias_atencion;z.instN++;if(r.dias_atencion<=3)z.instSla++;}
+        else{z.tickSum+=r.dias_atencion;z.tickN++;if(r.dias_atencion<=2)z.tickSla++;}
       }
     });
     return Array.from(map.values())
-      .map(z=>({name:z.name,diasInst:z.instN?z.instSum/z.instN:null,nInst:z.instN,diasTick:z.tickN?z.tickSum/z.tickN:null,nTick:z.tickN}))
+      .map(z=>({name:z.name,diasInst:z.instN?z.instSum/z.instN:null,nInst:z.instN,slaInst:z.instN?(z.instSla/z.instN)*100:null,diasTick:z.tickN?z.tickSum/z.tickN:null,nTick:z.tickN,slaTick:z.tickN?(z.tickSla/z.tickN)*100:null}))
       .filter(z=>z.nInst>0||z.nTick>0)
       .sort((a,b)=>(b.nInst+b.nTick)-(a.nInst+a.nTick)||a.name.localeCompare(b.name,"es"));
   },[byRange]);
@@ -2016,6 +2027,8 @@ function App(){
             {(tipoFilter==="todas"||tipoFilter==="Ticket")&&ticketsProjection&&(<KpiCardM icon={TrendingUp} label="Proyección de cierre — Tickets" value={numFmt(Math.round(ticketsProjection.proyeccion))} sub={`${numFmt(ticketsProjection.realizados)} resueltos · ${ticketsProjection.tasaDiaria.toFixed(1)}/día`} accent="var(--signal)"/>)}
             {(tipoFilter==="todas"||tipoFilter==="Instalación")&&diasAtencionInst!==null&&(<KpiCardM icon={Clock} label="Días prom. de atención — Instalaciones" value={diasAtencionInst.toFixed(1)} sub="Promedio días entre creación y atención (realizadas)" accent="var(--signal)"/>)}
             {(tipoFilter==="todas"||tipoFilter==="Ticket")&&diasAtencionTick!==null&&(<KpiCardM icon={Clock} label="Días prom. de atención — Tickets" value={diasAtencionTick.toFixed(1)} sub="Promedio días entre creación y atención (realizados)" accent="var(--amber)"/>)}
+            {(tipoFilter==="todas"||tipoFilter==="Instalación")&&slaData.inst&&(<KpiRingCardM label="SLA de atención — Instalaciones (72h)" pct={slaData.inst.pct} useSemaforo={false} accent={slaData.inst.pct>=SLA_META_PCT?"#22C55E":"#DC2626"} sub={`Meta ≥${SLA_META_PCT}% · ${numFmt(slaData.inst.dentro)} de ${numFmt(slaData.inst.total)}`} tooltip={<><div style={{fontWeight:600,marginBottom:6}}>SLA de atención — Instalaciones</div><div>Plazo: 72 horas (3 días) desde creación hasta atención</div><div>Meta de cumplimiento: {SLA_META_PCT}% mínimo</div><div style={{marginTop:4}}>Dentro del plazo: {numFmt(slaData.inst.dentro)} de {numFmt(slaData.inst.total)} realizadas</div></>}/>)}
+            {(tipoFilter==="todas"||tipoFilter==="Ticket")&&slaData.tick&&(<KpiRingCardM label="SLA de atención — Tickets (48h)" pct={slaData.tick.pct} useSemaforo={false} accent={slaData.tick.pct>=SLA_META_PCT?"#22C55E":"#DC2626"} sub={`Meta ≥${SLA_META_PCT}% · ${numFmt(slaData.tick.dentro)} de ${numFmt(slaData.tick.total)}`} tooltip={<><div style={{fontWeight:600,marginBottom:6}}>SLA de atención — Tickets</div><div>Plazo: 48 horas (2 días) desde creación hasta atención</div><div>Meta de cumplimiento: {SLA_META_PCT}% mínimo</div><div style={{marginTop:4}}>Dentro del plazo: {numFmt(slaData.tick.dentro)} de {numFmt(slaData.tick.total)} realizados</div></>}/>)}
           </div>)}
           <div className="chart-grid">
             <div className="chart-card" style={{gridColumn:"1 / -1",marginTop:28}}><div className="chart-title">Cumplimiento por tipo de orden — Últimos 4 meses (%)</div><ResponsiveContainer width="100%" height={280}><BarChart data={cumplimiento3MesesData} margin={{top:14,right:20,bottom:10,left:10}} barGap={4} barCategoryGap="28%"><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="mes" stroke="var(--text-dim)" fontSize={12} tickLine={false}/><YAxis stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={36} domain={[0,100]} tickFormatter={v=>`${v}%`}/><Tooltip contentStyle={tooltipStyle} formatter={v=>[`${v}%`,"Cumplimiento"]}/><Legend wrapperStyle={{fontSize:12}}/>{(tipoFilter==="todas"||tipoFilter==="Instalación")&&<Bar dataKey="Instalación" name="Instalación" fill="#94A3B8" maxBarSize={48} radius={[4,4,0,0]}>{cumplimiento3MesesData.map((e,i)=>(<Cell key={i} fill={semaforoColor(e.Instalación)}/>))}<LabelList dataKey="Instalación" position="top" offset={6} fontSize={10} fill="var(--chart-label)" formatter={v=>`${v}%`}/></Bar>}{(tipoFilter==="todas"||tipoFilter==="Ticket")&&<Bar dataKey="Ticket" name="Ticket" fill="#94A3B8" maxBarSize={48} radius={[4,4,0,0]}>{cumplimiento3MesesData.map((e,i)=>(<Cell key={i} fill={semaforoColor(e.Ticket)}/>))}<LabelList dataKey="Ticket" position="top" offset={6} fontSize={10} fill="var(--chart-label)" formatter={v=>`${v}%`}/></Bar>}</BarChart></ResponsiveContainer></div>
@@ -2095,16 +2108,16 @@ function App(){
                 <div className="chart-card" style={{gridColumn:"1 / -1"}}>
                   <div className="chart-title">Días de atención por zona</div>
                   <div style={{fontSize:11.5,color:"var(--text-muted)",marginBottom:10}}>
-                    Promedio de días entre creación y atención de órdenes realizadas, por zona. El número entre paréntesis es la cantidad de órdenes realizadas con fecha de atención registrada.
+                    Promedio de días entre creación y atención de órdenes realizadas, por zona, y % dentro del SLA (Instalaciones 72h, Tickets 48h · meta ≥{SLA_META_PCT}%). El número entre paréntesis es la cantidad de órdenes realizadas con fecha de atención registrada.
                   </div>
                   <div className="odoo-table-wrap">
                     <table className="odoo-table">
-                      <thead><tr><th>Zona</th>{(tipoFilter==="todas"||tipoFilter==="Instalación")&&<th>Días prom. — Instalaciones</th>}{(tipoFilter==="todas"||tipoFilter==="Ticket")&&<th>Días prom. — Tickets</th>}</tr></thead>
+                      <thead><tr><th>Zona</th>{(tipoFilter==="todas"||tipoFilter==="Instalación")&&<><th>Días prom. — Instalaciones</th><th>SLA — Instalaciones (72h)</th></>}{(tipoFilter==="todas"||tipoFilter==="Ticket")&&<><th>Días prom. — Tickets</th><th>SLA — Tickets (48h)</th></>}</tr></thead>
                       <tbody>{pageRows.map(z=>(
                         <tr key={z.name}>
                           <td style={{fontSize:12,fontWeight:500}}>{z.name}</td>
-                          {(tipoFilter==="todas"||tipoFilter==="Instalación")&&<td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasInst!==null?`${z.diasInst.toFixed(1)} (${numFmt(z.nInst)})`:"—"}</td>}
-                          {(tipoFilter==="todas"||tipoFilter==="Ticket")&&<td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasTick!==null?`${z.diasTick.toFixed(1)} (${numFmt(z.nTick)})`:"—"}</td>}
+                          {(tipoFilter==="todas"||tipoFilter==="Instalación")&&<><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasInst!==null?`${z.diasInst.toFixed(1)} (${numFmt(z.nInst)})`:"—"}</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,color:z.slaInst===null?"var(--text-dim)":z.slaInst>=SLA_META_PCT?"#1A7F4B":"#D6453F"}}>{z.slaInst!==null?`${z.slaInst.toFixed(1)}%`:"—"}</td></>}
+                          {(tipoFilter==="todas"||tipoFilter==="Ticket")&&<><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasTick!==null?`${z.diasTick.toFixed(1)} (${numFmt(z.nTick)})`:"—"}</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,color:z.slaTick===null?"var(--text-dim)":z.slaTick>=SLA_META_PCT?"#1A7F4B":"#D6453F"}}>{z.slaTick!==null?`${z.slaTick.toFixed(1)}%`:"—"}</td></>}
                         </tr>
                       ))}</tbody>
                     </table>
