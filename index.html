@@ -379,18 +379,30 @@ function App(){
   },[mwTicketsData]);
   const mwTicketsResumenAbiertos=useMemo(()=>{
     const abiertos=mwTicketsData.filter(r=>r.estado!=="cerrado");
-    const map=new Map();
+    const total=abiertos.length;
+    const zonaMap=new Map();
     abiertos.forEach(r=>{
       const zona=r.zona||"Sin zona";
       const motivoKey=mwNormMotivo(r.motivo_asunto)||"(sin motivo)";
       const motivoLabel=r.motivo_asunto||"Sin motivo/asunto";
-      const key=`${zona}|${motivoKey}`;
-      if(!map.has(key))map.set(key,{zona,motivo:motivoLabel,cantidad:0});
-      map.get(key).cantidad++;
+      if(!zonaMap.has(zona))zonaMap.set(zona,{zona,total:0,motivos:new Map()});
+      const z=zonaMap.get(zona);
+      z.total++;
+      if(!z.motivos.has(motivoKey))z.motivos.set(motivoKey,{motivo:motivoLabel,cantidad:0});
+      z.motivos.get(motivoKey).cantidad++;
     });
-    const list=[...map.values()].sort((a,b)=>b.cantidad-a.cantidad||a.zona.localeCompare(b.zona,"es"));
-    const total=abiertos.length;
-    return{rows:list,total};
+    const zonas=[...zonaMap.values()].map(z=>({
+      zona:z.zona,
+      total:z.total,
+      pctTotal:total>0?(z.total/total*100):0,
+      motivos:[...z.motivos.values()].map(m=>({
+        motivo:m.motivo,
+        cantidad:m.cantidad,
+        pctZona:z.total>0?(m.cantidad/z.total*100):0,
+        pctTotal:total>0?(m.cantidad/total*100):0,
+      })).sort((a,b)=>b.cantidad-a.cantidad||a.motivo.localeCompare(b.motivo,"es")),
+    })).sort((a,b)=>b.total-a.total||a.zona.localeCompare(b.zona,"es"));
+    return{zonas,total};
   },[mwTicketsData]);
   const mwTicketsRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
@@ -1527,34 +1539,36 @@ function App(){
                   <div className="odoo-kpi"><div className="odoo-kpi-label">Abiertos</div><div className="odoo-kpi-value" style={{color:"#D6453F"}}>{numFmt(totalAbiertos)}</div></div>
                 </div>
                 {(()=>{
-                  const resumenRows=mwTicketsResumenAbiertos.rows;
+                  const MW_RESUMEN_ZONAS_PAGE=10;
+                  const resumenZonas=mwTicketsResumenAbiertos.zonas;
                   const resumenTotal=mwTicketsResumenAbiertos.total;
-                  const resumenTotalPages=Math.max(1,Math.ceil(resumenRows.length/MW_PAGE_SIZE));
+                  const resumenTotalPages=Math.max(1,Math.ceil(resumenZonas.length/MW_RESUMEN_ZONAS_PAGE));
                   const resumenPageSafe=Math.min(mwResumenPage,resumenTotalPages);
-                  const resumenPageRows=resumenRows.slice((resumenPageSafe-1)*MW_PAGE_SIZE,resumenPageSafe*MW_PAGE_SIZE);
+                  const resumenPageZonas=resumenZonas.slice((resumenPageSafe-1)*MW_RESUMEN_ZONAS_PAGE,resumenPageSafe*MW_RESUMEN_ZONAS_PAGE);
                   return(
                     <div style={{marginBottom:20}}>
                       <div className="chart-title" style={{marginBottom:8}}>Resumen de tickets abiertos por zona y motivo</div>
                       <div className="odoo-table-wrap">
                         <table className="odoo-table">
-                          <thead><tr><th>Zona</th><th>Motivo/Asunto</th><th>Cantidad</th><th>% de abiertos</th></tr></thead>
-                          <tbody>{resumenPageRows.map((r,i)=>(
-                            <tr key={`${r.zona}|${r.motivo}|${i}`}>
-                              <td style={{fontSize:12}}>{r.zona}</td>
-                              <td style={{fontSize:12,color:"var(--text-muted)"}}>{r.motivo}</td>
-                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600}}>{numFmt(r.cantidad)}</td>
-                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{resumenTotal>0?((r.cantidad/resumenTotal)*100).toFixed(1):"0.0"}%</td>
+                          <thead><tr><th>Zona</th><th>Motivo/Asunto</th><th>Cantidad</th><th>% de la zona</th><th>% del total abiertos</th></tr></thead>
+                          <tbody>{resumenPageZonas.map(z=>z.motivos.map((m,i)=>(
+                            <tr key={`${z.zona}|${m.motivo}|${i}`}>
+                              {i===0&&<td rowSpan={z.motivos.length} style={{fontSize:12,fontWeight:600,verticalAlign:"top",borderRight:"1px solid var(--border)"}}>{z.zona}<div style={{fontSize:11,fontWeight:400,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{numFmt(z.total)} · {z.pctTotal.toFixed(1)}% del total</div></td>}
+                              <td style={{fontSize:12,color:"var(--text-muted)"}}>{m.motivo}</td>
+                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600}}>{numFmt(m.cantidad)}</td>
+                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctZona.toFixed(1)}%</td>
+                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctTotal.toFixed(1)}%</td>
                             </tr>
-                          ))}</tbody>
+                          )))}</tbody>
                         </table>
-                        {resumenRows.length===0&&<div style={{padding:"32px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay tickets abiertos en el período/filtro seleccionado.</div>}
+                        {resumenZonas.length===0&&<div style={{padding:"32px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay tickets abiertos en el período/filtro seleccionado.</div>}
                       </div>
-                      {resumenRows.length>MW_PAGE_SIZE&&(
+                      {resumenZonas.length>MW_RESUMEN_ZONAS_PAGE&&(
                         <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
                           <button className="btn btn-ghost" disabled={resumenPageSafe<=1} onClick={()=>setMwResumenPage(p=>Math.max(1,p-1))}>← Anterior</button>
                           <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Página {resumenPageSafe} de {resumenTotalPages}</span>
                           <button className="btn btn-ghost" disabled={resumenPageSafe>=resumenTotalPages} onClick={()=>setMwResumenPage(p=>Math.min(resumenTotalPages,p+1))}>Siguiente →</button>
-                          <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginLeft:"auto"}}>{resumenRows.length} combinaciones zona/motivo · {numFmt(resumenTotal)} tickets abiertos</span>
+                          <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginLeft:"auto"}}>{resumenZonas.length} zonas · {numFmt(resumenTotal)} tickets abiertos</span>
                         </div>
                       )}
                     </div>
