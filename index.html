@@ -628,6 +628,30 @@ function App(){
   const zonaCumplimientoData=useMemo(()=>{const map=new Map();filtered.forEach(r=>{if(!r.zona)return;const zn=r.zona.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ");if(!zn||zn==="sin zona")return;if(!map.has(zn))map.set(zn,{name:r.zona.trim(),realizado:0,total:0,noContactado:0});const z=map.get(zn);z.total++;if(r.estatus==="Realizado")z.realizado++;if(r.estatus==="No realizado"&&r.motivo&&r.motivo.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes("no contactado"))z.noContactado++;});const arr=Array.from(map.values());const top10=arr.sort((a,b)=>b.total-a.total).slice(0,10).map(z=>({...z,pct:Math.round((z.realizado/z.total)*100)})).sort((a,b)=>b.pct-a.pct);return{top:top10.slice(0,5),bottom:top10.slice(-5).reverse()};},[filtered]);
 
 
+  // ---- Días de atención por zona (Instalaciones y Tickets) ----
+  // Usa byRange (no filtered) para no depender de tipoFilter: la tabla siempre
+  // trae ambos tipos y la columna correspondiente se oculta según la vista activa.
+  const diasAtencionPorZonaData=useMemo(()=>{
+    const map=new Map();
+    byRange.forEach(r=>{
+      if(!r.zona)return;
+      const zn=r.zona.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ");
+      if(!zn||zn==="sin zona")return;
+      if(!map.has(zn))map.set(zn,{name:r.zona.trim(),instSum:0,instN:0,tickSum:0,tickN:0});
+      const z=map.get(zn);
+      if(r.estatus==="Realizado"&&r.dias_atencion!==null&&r.dias_atencion!==undefined){
+        if(r.tipo==="Instalación"){z.instSum+=r.dias_atencion;z.instN++;}
+        else{z.tickSum+=r.dias_atencion;z.tickN++;}
+      }
+    });
+    return Array.from(map.values())
+      .map(z=>({name:z.name,diasInst:z.instN?z.instSum/z.instN:null,nInst:z.instN,diasTick:z.tickN?z.tickSum/z.tickN:null,nTick:z.tickN}))
+      .filter(z=>z.nInst>0||z.nTick>0)
+      .sort((a,b)=>(b.nInst+b.nTick)-(a.nInst+a.nTick)||a.name.localeCompare(b.name,"es"));
+  },[byRange]);
+  const [diasZonaPage,setDiasZonaPage]=useState(1);
+  useEffect(()=>{setDiasZonaPage(1);},[diasAtencionPorZonaData]);
+
   // ---- Matriz de impacto por zona ----
   // Cruza volumen (eje X) contra tasa de incumplimiento (eje Y) para no
   // sobrevalorar zonas con muy pocas órdenes: un 66% sobre 3 órdenes no es
@@ -2063,6 +2087,39 @@ function App(){
                 </div>
               </div>
             )}
+            {diasAtencionPorZonaData.length>0&&(()=>{
+              const totalPages=Math.max(1,Math.ceil(diasAtencionPorZonaData.length/MW_PAGE_SIZE));
+              const pageSafe=Math.min(diasZonaPage,totalPages);
+              const pageRows=diasAtencionPorZonaData.slice((pageSafe-1)*MW_PAGE_SIZE,pageSafe*MW_PAGE_SIZE);
+              return(
+                <div className="chart-card" style={{gridColumn:"1 / -1"}}>
+                  <div className="chart-title">Días de atención por zona</div>
+                  <div style={{fontSize:11.5,color:"var(--text-muted)",marginBottom:10}}>
+                    Promedio de días entre creación y atención de órdenes realizadas, por zona. El número entre paréntesis es la cantidad de órdenes realizadas con fecha de atención registrada.
+                  </div>
+                  <div className="odoo-table-wrap">
+                    <table className="odoo-table">
+                      <thead><tr><th>Zona</th>{(tipoFilter==="todas"||tipoFilter==="Instalación")&&<th>Días prom. — Instalaciones</th>}{(tipoFilter==="todas"||tipoFilter==="Ticket")&&<th>Días prom. — Tickets</th>}</tr></thead>
+                      <tbody>{pageRows.map(z=>(
+                        <tr key={z.name}>
+                          <td style={{fontSize:12,fontWeight:500}}>{z.name}</td>
+                          {(tipoFilter==="todas"||tipoFilter==="Instalación")&&<td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasInst!==null?`${z.diasInst.toFixed(1)} (${numFmt(z.nInst)})`:"—"}</td>}
+                          {(tipoFilter==="todas"||tipoFilter==="Ticket")&&<td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{z.diasTick!==null?`${z.diasTick.toFixed(1)} (${numFmt(z.nTick)})`:"—"}</td>}
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  {diasAtencionPorZonaData.length>MW_PAGE_SIZE&&(
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
+                      <button className="btn btn-ghost" disabled={pageSafe<=1} onClick={()=>setDiasZonaPage(p=>Math.max(1,p-1))}>← Anterior</button>
+                      <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Página {pageSafe} de {totalPages}</span>
+                      <button className="btn btn-ghost" disabled={pageSafe>=totalPages} onClick={()=>setDiasZonaPage(p=>Math.min(totalPages,p+1))}>Siguiente →</button>
+                      <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginLeft:"auto"}}>{diasAtencionPorZonaData.length} zonas</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </>
       )}
