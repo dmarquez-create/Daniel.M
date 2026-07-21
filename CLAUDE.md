@@ -240,6 +240,11 @@ siente lenta con 6 meses de datos.
 - La pestaña Histórico del módulo de asignación no tiene paginación todavía (se resuelve
   en la reconstrucción de "Agenda Técnica", ver abajo).
 - El dominio `operaciones.nidix.mx` quedó pendiente por falta de acceso al DNS.
+- **Alertas a Taiven y Lucero no llegan** (diagnosticado 2026-07-21): `chat-alerts`
+  solo tiene webhook configurado para 4 agentes (Erika, Fernanda, Iris, Liz) en el
+  secret `AGENT_WEBHOOKS_JSON`. Taiven y Lucero no están ahí — no es un bug, falta
+  crear su webhook de Google Chat (espacio → Administrar webhooks → Agregar webhook)
+  y agregar la URL al secret.
 
 ### Agenda Técnica — reconstrucción de "Asignación a Cuadrillas" (en progreso)
 
