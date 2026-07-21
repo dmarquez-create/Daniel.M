@@ -52,21 +52,41 @@ Si se necesita otro componente de Recharts, hay que agregarlo ahí primero.
 Todas con **"Verify JWT with legacy secret" DESACTIVADO**. La validación de identidad
 se hace dentro de la función, leyendo el header `Authorization` que manda el frontend.
 
-| Función | Qué hace |
-|---|---|
-| `mikrowisp-datos` | MySQL directo contra MikroWisp. Módulos: `instalaciones`, `tickets`, `tickets_cerrados` |
-| `calendar-events` | Google Calendar: `list`, `crear`, `borrar`, `diagnostico` |
-| `asignar-ordenes` | Asignación de órdenes a cuadrillas: `asignar`, `listar`, `actualizar` |
-| `chat-alerts` | Alertas por webhook de Google Chat, personalizadas por agente |
-| `odoo-orders` | Odoo Field Service vía JSON-RPC (`project.task` con `is_fsm=true`) |
-| `manage-users` | Gestión de usuarios |
-| `directory-photo` | Fotos de perfil vía Google Admin SDK |
+| Función | Qué hace | Fuente local |
+|---|---|---|
+| `mikrowisp-datos` | MySQL directo contra MikroWisp. Módulos: `instalaciones`, `tickets`, `tickets_cerrados` | ✅ `supabase/functions/mikrowisp-datos/` |
+| `calendar-events` | Google Calendar: `list`, `crear`, `borrar`, `diagnostico` | ❌ no descargada |
+| `asignar-ordenes` | Asignación de órdenes a cuadrillas: `asignar`, `listar`, `actualizar` | ✅ `supabase/functions/asignar-ordenes/` |
+| `chat-alerts` | Alertas por webhook de Google Chat, personalizadas por agente | ✅ `supabase/functions/chat-alerts/` |
+| `odoo-orders` | Odoo Field Service vía JSON-RPC (`project.task` con `is_fsm=true`) | ❌ no descargada |
+| `manage-users` | Gestión de usuarios | ❌ no descargada |
+| `directory-photo` | Fotos de perfil vía Google Admin SDK | ❌ no descargada |
+
+**`chat-alerts` solo tiene webhooks para 4 "agentes" de call center** (Erika, Fernanda,
+Iris, Liz — hardcodeados en `AGENT_WEBHOOKS` dentro de la función), **no para las 13
+cuadrillas/técnicos de `CAL_CALENDARS`.** Cualquier feature que quiera notificar a un
+técnico/cuadrilla por Google Chat necesita primero conseguir esos webhooks (cada uno
+requiere que esa persona cree un espacio de Chat con webhook entrante) — no es trivial
+asumir que "ya existe el canal" solo porque `chat-alerts` ya existe.
 
 ### Despliegue de Edge Functions
 
 El conector MCP de Supabase apunta a **otra cuenta**, no al proyecto
 `alisslhkyxblpvwzutcx`. Históricamente se han desplegado pegando el código en la UI web.
-Con el CLI de Supabase autenticado en la cuenta correcta esto se puede automatizar.
+
+El CLI de Supabase (`C:\Users\Nidix\bin\supabase.exe`) ya está instalado y se puede
+enlazar al proyecto correcto (`supabase link --project-ref alisslhkyxblpvwzutcx`) con
+un Personal Access Token (`supabase login --token sbp_...`, generado en
+supabase.com/dashboard/account/tokens). **El token expira** — si `supabase projects list`
+da 401, hay que pedir uno nuevo y volver a hacer login. Con el CLI autenticado:
+- `supabase functions download <nombre>` trae el código fuente a
+  `supabase/functions/<nombre>/<nombre>.ts` — hay que renombrarlo a `index.ts` antes de
+  poder desplegar.
+- `supabase functions deploy <nombre> --no-verify-jwt --use-api` despliega sin Docker.
+- `supabase db query --linked "<sql>"` o `-f archivo.sql` corre SQL directo contra la
+  base en vivo — útil para inspeccionar esquema real (columnas, constraints, políticas
+  RLS) antes de escribir una migración, y para probar una migración completa dentro de
+  una transacción con `rollback;` en vez de `commit;` al final, sin dejar nada aplicado.
 
 ### Secrets (nunca hardcodear credenciales)
 
@@ -217,5 +237,33 @@ siente lenta con 6 meses de datos.
 - **Rotar credenciales:** el password de MySQL (`dmarquez`) y el `GOOGLE_CLIENT_SECRET`
   quedaron expuestos en un chat. Rotar ambos.
 - **Usuario MySQL de solo lectura** para el dashboard (hoy usa uno con escritura).
-- La pestaña Histórico del módulo de asignación no tiene paginación todavía.
+- La pestaña Histórico del módulo de asignación no tiene paginación todavía (se resuelve
+  en la reconstrucción de "Agenda Técnica", ver abajo).
 - El dominio `operaciones.nidix.mx` quedó pendiente por falta de acceso al DNS.
+
+### Agenda Técnica — reconstrucción de "Asignación a Cuadrillas" (en progreso)
+
+Rediseño por fases del módulo `activeModule==="asignacion"`. Plan completo (esquema,
+secuencia 1A-1E, qué queda fuera de alcance) en el historial de esta sesión; resumen:
+
+- **Migración lista pero NO aplicada:**
+  `supabase/migrations/20260721101440_agenda_tecnica_fase1.sql` — renombra
+  `asignaciones_cuadrilla` → `agenda_servicios`, pasa de 4 a 10 estados
+  (`pendiente/asignado/confirmado/en_ruta/en_sitio/trabajando/finalizado/reprogramado/cancelado/no_realizado`),
+  agrega `tecnicos`, `tecnico_ausencias`, `motivos_no_realizado`, y columnas nuevas en
+  `agenda_servicios` (`direccion`, `ventana_inicio/fin`, `tiempo_estimado_min`,
+  `material_requerido`, `motivo_no_realizado`, `tecnico_id`). Verificada con un dry-run
+  (`begin...rollback`) contra el esquema real — sin errores.
+- **No aplicar esta migración sin desplegar el frontend nuevo al mismo tiempo**: el
+  frontend en producción hoy todavía espera los 4 estados viejos; aplicar la migración
+  sola rompería la vista actual de "Asignación a Cuadrillas".
+- Dato real ya verificado: `devuelta` en los datos históricos **nunca fue un estado
+  "activo"** (el índice único parcial viejo solo protegía `asignada`) — por eso el
+  backfill lo mapea a `cancelado`, no a `pendiente` (mapearlo a `pendiente` rompe el
+  nuevo índice único porque hay órdenes con más de una fila `devuelta`, ej. ticket
+  178508 tiene 2).
+- `CAL_CALENDARS` (13 cuadrillas hardcodeadas en el frontend) se siembran como fila
+  inicial de `tecnicos`, pero **`CAL_CALENDARS` no se borra** — sigue alimentando el
+  visor de calendario de solo lectura ("Agenda"), que no se toca en esta fase.
+- El módulo "Agentes y Técnicos" (reporteo sobre el Excel importado, nombres libres)
+  **tampoco se toca** — no calza de forma confiable con el roster curado de `tecnicos`.
