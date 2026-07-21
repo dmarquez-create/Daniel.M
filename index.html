@@ -286,17 +286,11 @@ function App(){
   const ODOO_FN=`${SUPABASE_URL}/functions/v1/odoo-orders`;
   const MW_FN=`${SUPABASE_URL}/functions/v1/mikrowisp-datos`;
   const ASIG_FN=`${SUPABASE_URL}/functions/v1/asignar-ordenes`;
-  const [asigTab,setAsigTab]=useState("pendientes");
+  const [asigTab,setAsigTab]=useState("asignadas");
   const [asigTipo,setAsigTipo]=useState("instalacion");
   const [asigData,setAsigData]=useState([]);
   const [asigLoading,setAsigLoading]=useState(false);
   const [asigError,setAsigError]=useState(null);
-  const [asigSel,setAsigSel]=useState(new Set());
-  const [asigCuadrilla,setAsigCuadrilla]=useState(CAL_CALENDARS[0]);
-  const [asigFecha,setAsigFecha]=useState(new Date().toISOString().slice(0,10));
-  const [asigPrioridad,setAsigPrioridad]=useState("Media");
-  const [asigNotas,setAsigNotas]=useState("");
-  const [asigSaving,setAsigSaving]=useState(false);
   const [asigMsg,setAsigMsg]=useState(null);
   const [asigSearch,setAsigSearch]=useState("");
   // ---- Agenda Técnica (Fase 1) ----
@@ -309,7 +303,6 @@ function App(){
   const ESTADOS_ACTIVOS_ORDEN=["pendiente","asignado","confirmado","en_ruta","en_sitio","trabajando","reprogramado"];
   const [agTecnicos,setAgTecnicos]=useState([]);
   const [agMotivos,setAgMotivos]=useState([]);
-  const [asigTecnicoId,setAsigTecnicoId]=useState("");
   const [asigEstadoFilter,setAsigEstadoFilter]=useState("");
   const [agCrearOpen,setAgCrearOpen]=useState(false);
   const [agCrearSaving,setAgCrearSaving]=useState(false);
@@ -371,7 +364,7 @@ function App(){
   useEffect(()=>{
     if(activeModule!=="asignacion")return;
     let cancelado=false;
-    setAsigLoading(true);setAsigError(null);setAsigSel(new Set());
+    setAsigLoading(true);setAsigError(null);
     (async()=>{
       try{
         const asignaciones=await cargarAsignaciones();
@@ -482,29 +475,6 @@ function App(){
     return asigList.filter(a=>ESTADOS_TERMINALES.has(a.estatus)&&a.tipo===asigTipo&&(!q||(a.cliente||"").toLowerCase().includes(q)||(a.motivo||"").toLowerCase().includes(q)||(a.cuadrilla||"").toLowerCase().includes(q)));
   },[asigList,asigTipo,asigSearch,ESTADOS_TERMINALES]);
   useEffect(()=>{setAsigHistPage(1);},[asigHistorico]);
-  const asigToggle=(key)=>setAsigSel(prev=>{const n=new Set(prev);n.has(key)?n.delete(key):n.add(key);return n;});
-  const asigToggleAll=()=>setAsigSel(prev=>prev.size===asigPendientes.length?new Set():new Set(asigPendientes.map(r=>r.orden_id)));
-  const guardarAsignacion=async()=>{
-    if(asigSel.size===0){setAsigMsg({tipo:"warn",texto:"Selecciona al menos una orden."});return;}
-    const tecnico=agTecnicos.find(t=>t.id===asigTecnicoId);
-    const cuadrillaNombre=tecnico?.nombre||asigCuadrilla;
-    setAsigSaving(true);setAsigMsg(null);
-    try{
-      const ordenes=asigPendientes.filter(r=>asigSel.has(r.orden_id)).map(r=>({tipo:r.tipo,orden_id:r.orden_id,cliente:r.cliente,motivo:r.motivo,zona:r.zona}));
-      const r=await fetch(ASIG_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"asignar",ordenes,cuadrilla:cuadrillaNombre,tecnico_id:tecnico?.id||null,fecha_prog:asigFecha,prioridad:asigPrioridad,notas:asigNotas||null})});
-      const d=await r.json();
-      if(d.error)throw new Error(d.error);
-      const base=`${d.asignadas} ${d.asignadas===1?"orden asignada":"órdenes asignadas"} a ${cuadrillaNombre}`;
-      if(d.eventos_fallidos>0){
-        setAsigMsg({tipo:"warn",texto:`${base}. Ojo: ${d.eventos_fallidos} ${d.eventos_fallidos===1?"evento no se creó":"eventos no se crearon"} en la agenda (ver columna Agenda en "Agenda activa").`});
-      }else{
-        setAsigMsg({tipo:"ok",texto:`${base}, con ${d.eventos_creados===1?"su evento":"sus eventos"} en la agenda.`});
-      }
-      setAsigSel(new Set());setAsigNotas("");
-      setAsigList(await cargarAsignaciones());
-    }catch(e){ setAsigMsg({tipo:"err",texto:e.message}); }
-    finally{ setAsigSaving(false); }
-  };
   const agLlamarAccion=async(payload)=>{
     const r=await fetch(ASIG_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify(payload)});
     const d=await r.json();
@@ -1452,64 +1422,17 @@ function App(){
             <div className="pulse-line"/>
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               <div className="range-toggle">
-                <button className={`range-btn${asigTipo==="instalacion"?" active":""}`} onClick={()=>{setAsigTipo("instalacion");setAsigSel(new Set());}}>Instalaciones pendientes</button>
-                <button className={`range-btn${asigTipo==="ticket"?" active":""}`} onClick={()=>{setAsigTipo("ticket");setAsigSel(new Set());}}>Tickets abiertos</button>
+                <button className={`range-btn${asigTipo==="instalacion"?" active":""}`} onClick={()=>setAsigTipo("instalacion")}>Instalaciones pendientes</button>
+                <button className={`range-btn${asigTipo==="ticket"?" active":""}`} onClick={()=>setAsigTipo("ticket")}>Tickets abiertos</button>
               </div>
               <div className="range-toggle">
-                <button className={`range-btn${asigTab==="pendientes"?" active":""}`} onClick={()=>setAsigTab("pendientes")}>Candidatos ({rowsP.length})</button>
                 <button className={`range-btn${asigTab==="asignadas"?" active":""}`} onClick={()=>setAsigTab("asignadas")}>Agenda activa ({rowsA.length})</button>
                 <button className={`range-btn${asigTab==="historico"?" active":""}`} onClick={()=>setAsigTab("historico")}>Histórico ({rowsH.length})</button>
               </div>
               <input className="odoo-search" style={{marginLeft:"auto",minWidth:220}} type="text" placeholder="Buscar cliente, motivo o zona…" value={asigSearch} onChange={e=>setAsigSearch(e.target.value)}/>
             </div>
             {asigMsg&&<div className={asigMsg.tipo==="err"?"error-banner":"success-banner"} style={{marginBottom:12,padding:"10px 14px",borderRadius:8,fontSize:13,background:asigMsg.tipo==="ok"?"rgba(26,127,75,.12)":asigMsg.tipo==="warn"?"rgba(217,164,4,.12)":"rgba(214,69,63,.12)",color:asigMsg.tipo==="ok"?"#1A7F4B":asigMsg.tipo==="warn"?"#D9A404":"#D6453F"}}>{asigMsg.texto}</div>}
-            {asigLoading?(<div className="loading-screen"><Loader2 size={16} className="spin"/> Cargando órdenes y agenda…</div>):asigError?(<div className="error-banner"><AlertCircle size={16}/> {asigError}</div>):asigTab==="pendientes"?(
-              <div style={{display:"grid",gridTemplateColumns:"1.7fr 1fr",gap:16,alignItems:"start"}}>
-                <div className="odoo-table-wrap">
-                  <table className="odoo-table">
-                    <thead><tr>
-                      <th style={{width:34}}><input type="checkbox" checked={rowsP.length>0&&asigSel.size===rowsP.length} onChange={asigToggleAll}/></th>
-                      <th>ID</th><th>Cliente</th><th>Motivo</th><th>Zona</th><th>Dirección</th><th>Teléfono</th><th>Fecha</th>
-                    </tr></thead>
-                    <tbody>{rowsP.slice(0,200).map(r=>(
-                      <tr key={r.orden_id} style={{background:asigSel.has(r.orden_id)?"rgba(34,86,201,.06)":undefined}}>
-                        <td><input type="checkbox" checked={asigSel.has(r.orden_id)} onChange={()=>asigToggle(r.orden_id)}/></td>
-                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{r.orden_id}</td>
-                        <td style={{fontWeight:500,fontSize:12.5}}>{r.cliente}</td>
-                        <td style={{fontSize:12,color:"var(--text-muted)"}} title={r.motivo||""}>{(r.motivo||"-").slice(0,34)}{(r.motivo||"").length>34?"…":""}</td>
-                        <td style={{fontSize:12}}>{r.zona}</td>
-                        <td style={{fontSize:11.5,color:"var(--text-muted)"}} title={r.direccion||""}>{r.direccion?`${r.direccion.slice(0,30)}${r.direccion.length>30?"…":""}`:"-"}{r.coordenadas&&<a href={`https://www.google.com/maps?q=${r.coordenadas.replace(/\s+/g,"")}`} target="_blank" rel="noreferrer" style={{marginLeft:6,color:"var(--signal)"}}>↗</a>}</td>
-                        <td style={{fontSize:11.5,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>{r.telefono||"-"}</td>
-                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,whiteSpace:"nowrap"}}>{r.fecha_ref?new Date(r.fecha_ref).toLocaleDateString("es-MX"):"-"}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                  {rowsP.length===0&&<div style={{padding:"32px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay órdenes por asignar.</div>}
-                  {rowsP.length>200&&<div style={{padding:"10px 12px",fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Mostrando 200 de {rowsP.length}. Usa la búsqueda para acotar.</div>}
-                </div>
-                <div className="chart-card" style={{padding:"16px 18px"}}>
-                  <div className="chart-title" style={{marginBottom:4}}>Asignar a técnico</div>
-                  <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:14}}>{asigSel.size>0?`${asigSel.size} ${asigSel.size===1?"orden lista":"órdenes listas"} para asignar.`:"Selecciona órdenes de la izquierda."}</div>
-                  <label style={{fontSize:12,color:"var(--text-muted)",display:"block",marginBottom:4}}>Técnico / cuadrilla</label>
-                  <select className="odoo-select" style={{width:"100%",marginBottom:10}} value={asigTecnicoId||agTecnicos[0]?.id||""} onChange={e=>setAsigTecnicoId(e.target.value)}>
-                    {agTecnicos.length===0&&<option value="">Sin técnicos activos</option>}
-                    {agTecnicos.map(t=>(<option key={t.id} value={t.id}>{t.nombre}</option>))}
-                  </select>
-                  <label style={{fontSize:12,color:"var(--text-muted)",display:"block",marginBottom:4}}>Fecha programada</label>
-                  <input type="date" className="odoo-select" style={{width:"100%",marginBottom:10}} value={asigFecha} onChange={e=>setAsigFecha(e.target.value)}/>
-                  <label style={{fontSize:12,color:"var(--text-muted)",display:"block",marginBottom:4}}>Prioridad</label>
-                  <div className="range-toggle" style={{marginBottom:10,width:"100%"}}>
-                    {["Alta","Media","Baja"].map(p=>(<button key={p} className={`range-btn${asigPrioridad===p?" active":""}`} style={{flex:1}} onClick={()=>setAsigPrioridad(p)}>{p}</button>))}
-                  </div>
-                  <label style={{fontSize:12,color:"var(--text-muted)",display:"block",marginBottom:4}}>Notas</label>
-                  <textarea className="odoo-search" style={{width:"100%",minHeight:56,marginBottom:14,resize:"vertical",fontFamily:"inherit"}} placeholder="Instrucciones para el técnico" value={asigNotas} onChange={e=>setAsigNotas(e.target.value)}/>
-                  <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} disabled={asigSaving||asigSel.size===0||!isAdmin} onClick={guardarAsignacion}>
-                    {asigSaving?(<><Loader2 size={14} className="spin"/> Asignando…</>):`Asignar ${asigSel.size} ${asigSel.size===1?"orden":"órdenes"}`}
-                  </button>
-                  {!isAdmin&&<div style={{fontSize:11,color:"var(--text-dim)",marginTop:8,textAlign:"center"}}>Solo el administrador puede asignar.</div>}
-                </div>
-              </div>
-            ):asigTab==="asignadas"?(
+            {asigLoading?(<div className="loading-screen"><Loader2 size={16} className="spin"/> Cargando órdenes y agenda…</div>):asigError?(<div className="error-banner"><AlertCircle size={16}/> {asigError}</div>):asigTab==="asignadas"?(
               <div style={{display:"grid",gridTemplateColumns:"240px 1fr",gap:16,alignItems:"start"}}>
                 <div className="chart-card" style={{padding:"14px 14px",maxHeight:640,display:"flex",flexDirection:"column"}}>
                   <label style={{fontSize:12,color:"var(--text-muted)",display:"block",marginBottom:4}}>Día</label>
