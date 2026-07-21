@@ -320,6 +320,34 @@ function App(){
   const [agNoRealizadoSaving,setAgNoRealizadoSaving]=useState(false);
   const [agAccionId,setAgAccionId]=useState(null);
   const [asigHistPage,setAsigHistPage]=useState(1);
+  // ---- Línea de tiempo (drag & drop) de Agenda activa ----
+  const TIMELINE_HORA_INICIO=7;
+  const TIMELINE_HORA_FIN=19;
+  const TIMELINE_DURACION_DEFAULT_MIN=60;
+  const [agTimelineFecha,setAgTimelineFecha]=useState(new Date().toISOString().slice(0,10));
+  const [agDragOrden,setAgDragOrden]=useState(null);
+  const [agDropSaving,setAgDropSaving]=useState(false);
+  const [agBloqueAbierto,setAgBloqueAbierto]=useState(null);
+  const timelinePosAHora=(fraccion)=>{
+    const totalMin=(TIMELINE_HORA_FIN-TIMELINE_HORA_INICIO)*60;
+    let min=Math.round(fraccion*totalMin/15)*15;
+    min=Math.max(0,Math.min(totalMin-15,min));
+    const h=TIMELINE_HORA_INICIO+Math.floor(min/60);
+    const m=min%60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+  };
+  const timelineHoraAPct=(horaStr)=>{
+    if(!horaStr)return null;
+    const[h,m]=horaStr.split(":").map(Number);
+    const totalMin=(TIMELINE_HORA_FIN-TIMELINE_HORA_INICIO)*60;
+    const min=(h-TIMELINE_HORA_INICIO)*60+(m||0);
+    return Math.max(0,Math.min(100,(min/totalMin)*100));
+  };
+  const timelineSumarMin=(horaStr,minutos)=>{
+    const[h,m]=horaStr.split(":").map(Number);
+    const total=h*60+m+minutos;
+    return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
+  };
   const [alertSending,setAlertSending]=useState(false);
   const [alertMsg,setAlertMsg]=useState(null);
   useEffect(()=>{if(activeModule!=="agenda")return;setCalLoading(true);setCalError(null);fetch(CALENDAR_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({year:calYear,month:calMonth})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setCalEvents(d.events||[]);}).catch(e=>setCalError(e.message)).finally(()=>setCalLoading(false));},[activeModule,calYear,calMonth,session]);
@@ -543,6 +571,31 @@ function App(){
       setAgCrearForm({tipo:"instalacion",cliente:"",zona:"",direccion:"",motivo:"",tecnicoId:"",fecha:new Date().toISOString().slice(0,10),ventanaInicio:"",ventanaFin:"",tiempoEstimado:"",material:"",prioridad:"Media",notas:""});
     }catch(e){ setAsigMsg({tipo:"err",texto:e.message}); }
     finally{ setAgCrearSaving(false); }
+  };
+  const agTimelineServicios=useMemo(()=>{
+    const porTecnico=new Map();
+    asigList.filter(a=>!ESTADOS_TERMINALES.has(a.estatus)&&a.fecha_prog===agTimelineFecha&&a.tecnico_id).forEach(a=>{
+      if(!porTecnico.has(a.tecnico_id))porTecnico.set(a.tecnico_id,[]);
+      porTecnico.get(a.tecnico_id).push(a);
+    });
+    return porTecnico;
+  },[asigList,agTimelineFecha,ESTADOS_TERMINALES]);
+  const agAsignarDrag=async(tecnico,horaInicio)=>{
+    if(!agDragOrden)return;
+    const orden=agDragOrden;
+    setAgDragOrden(null);
+    setAgDropSaving(true);
+    try{
+      await agLlamarAccion({
+        action:"asignar",
+        ordenes:[{tipo:orden.tipo,orden_id:orden.orden_id,cliente:orden.cliente,motivo:orden.motivo,zona:orden.zona}],
+        cuadrilla:tecnico.nombre,tecnico_id:tecnico.id,fecha_prog:agTimelineFecha,
+        ventana_inicio:horaInicio,ventana_fin:timelineSumarMin(horaInicio,TIMELINE_DURACION_DEFAULT_MIN),
+        prioridad:"Media",notas:null,
+      });
+      setAsigList(await cargarAsignaciones());
+    }catch(e){ setAsigMsg({tipo:"err",texto:e.message}); }
+    finally{ setAgDropSaving(false); }
   };
   const odooTechnicians=useMemo(()=>{const set=new Set();odooOrders.forEach(o=>(o.technician_names||[]).forEach(n=>set.add(n)));return Array.from(set).sort();},[odooOrders]);
   const odooFiltered=useMemo(()=>odooOrders.filter(o=>{const stageOk=odooStageFilter==="todas"||(o.stage_id&&o.stage_id[1]===odooStageFilter);const tecOk=odooTecFilter==="todos"||(o.technician_names||[]).includes(odooTecFilter);const searchOk=!odooSearch||o.name?.toLowerCase().includes(odooSearch.toLowerCase())||(o.partner_id&&o.partner_id[1]?.toLowerCase().includes(odooSearch.toLowerCase()));return stageOk&&tecOk&&searchOk;}),[odooOrders,odooStageFilter,odooTecFilter,odooSearch]);
@@ -1452,41 +1505,72 @@ function App(){
                 </div>
               </div>
             ):asigTab==="asignadas"?(
-              <>
-                <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-                  <button className={`range-btn${asigEstadoFilter===""?" active":""}`} onClick={()=>setAsigEstadoFilter("")}>Todos</button>
-                  {ESTADOS_ACTIVOS_ORDEN.map(es=>(<button key={es} className={`range-btn${asigEstadoFilter===es?" active":""}`} onClick={()=>setAsigEstadoFilter(es)}>{ESTADO_LABEL[es]}</button>))}
+              <div style={{display:"grid",gridTemplateColumns:"240px 1fr",gap:16,alignItems:"start"}}>
+                <div className="chart-card" style={{padding:"14px 14px",maxHeight:640,display:"flex",flexDirection:"column"}}>
+                  <label style={{fontSize:12,color:"var(--text-muted)",display:"block",marginBottom:4}}>Día</label>
+                  <input type="date" className="odoo-select" style={{width:"100%",marginBottom:12}} value={agTimelineFecha} onChange={e=>setAgTimelineFecha(e.target.value)}/>
+                  <div style={{fontSize:11,color:"var(--text-dim)",marginBottom:8}}>Arrastra un candidato sobre la línea de tiempo de un técnico para asignarlo.</div>
+                  <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                    {rowsP.length===0&&<div style={{fontSize:12,color:"var(--text-dim)",padding:"12px 0"}}>No hay candidatos para {asigTipo==="instalacion"?"instalación":"ticket"}.</div>}
+                    {rowsP.slice(0,150).map(r=>(
+                      <div key={r.orden_id} draggable onDragStart={()=>setAgDragOrden(r)} onDragEnd={()=>setAgDragOrden(null)}
+                        style={{border:"1px solid var(--border)",borderRadius:8,padding:"7px 9px",cursor:"grab",background:"var(--surface)",opacity:agDragOrden?.orden_id===r.orden_id?0.4:1}}>
+                        <div style={{fontSize:12,fontWeight:600}}>{r.cliente}</div>
+                        <div style={{fontSize:11,color:"var(--text-muted)"}}>{r.zona||"Sin zona"}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="odoo-table-wrap">
-                  <table className="odoo-table">
-                    <thead><tr><th>ID</th><th>Cliente</th><th>Motivo</th><th>Zona</th><th>Técnico</th><th>Fecha</th><th>Ventana</th><th>Prioridad</th><th>Estado</th><th>Agenda</th><th></th></tr></thead>
-                    <tbody>{rowsA.map(a=>{
-                      const siguiente=SIGUIENTE_ESTADO[a.estatus];
-                      const ocupado=agAccionId===a.id;
+                <div className="chart-card" style={{padding:"14px 14px",overflowX:"auto"}}>
+                  {agDropSaving&&<div style={{fontSize:11,color:"var(--signal)",marginBottom:8}}><Loader2 size={12} className="spin" style={{marginRight:4,verticalAlign:"middle"}}/> Asignando…</div>}
+                  <div style={{minWidth:760}}>
+                    <div style={{display:"flex",marginBottom:6,paddingLeft:120}}>
+                      {Array.from({length:TIMELINE_HORA_FIN-TIMELINE_HORA_INICIO},(_,i)=>(
+                        <div key={i} style={{flex:1,fontSize:10.5,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>{String(TIMELINE_HORA_INICIO+i).padStart(2,"0")}:00</div>
+                      ))}
+                    </div>
+                    {agTecnicos.length===0&&<div style={{padding:"24px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay técnicos activos.</div>}
+                    {agTecnicos.map(t=>{
+                      const servicios=agTimelineServicios.get(t.id)||[];
                       return(
-                      <tr key={a.id}>
-                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{a.orden_id}</td>
-                        <td style={{fontWeight:500,fontSize:12.5}}>{a.cliente}</td>
-                        <td style={{fontSize:12,color:"var(--text-muted)"}} title={a.motivo||""}>{(a.motivo||"-").slice(0,28)}{(a.motivo||"").length>28?"…":""}</td>
-                        <td style={{fontSize:12}}>{a.zona||"-"}</td>
-                        <td style={{fontSize:12,fontWeight:500}}>{a.cuadrilla}</td>
-                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,whiteSpace:"nowrap"}}>{a.fecha_prog?new Date(a.fecha_prog+"T00:00:00").toLocaleDateString("es-MX"):"-"}</td>
-                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,whiteSpace:"nowrap"}}>{a.ventana_inicio?`${a.ventana_inicio.slice(0,5)}${a.ventana_fin?`-${a.ventana_fin.slice(0,5)}`:""}`:"-"}</td>
-                        <td><span style={{background:prioColor[a.prioridad]||"#8997AB",color:"#fff",borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:600}}>{a.prioridad}</span></td>
-                        <td><span style={{background:ESTADO_COLOR[a.estatus]||"#8997AB",color:"#fff",borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{ESTADO_LABEL[a.estatus]||a.estatus}</span></td>
-                        <td>{a.evento_id?(<span title="Evento creado en la agenda del técnico" style={{color:"#1A7F4B",fontSize:11,fontWeight:600}}>✓</span>):a.evento_error?(<span title={a.evento_error} style={{color:"#D6453F",fontSize:11,fontWeight:600,cursor:"help"}}>✕</span>):(<span style={{color:"var(--text-dim)",fontSize:11}}>-</span>)}</td>
-                        <td style={{whiteSpace:"nowrap"}}>{isAdmin&&(<>
-                          {siguiente&&<button className="btn btn-ghost" style={{padding:"2px 8px",fontSize:11,marginRight:4}} disabled={ocupado} onClick={()=>agAvanzarEstado(a)}>→ {ESTADO_LABEL[siguiente]}</button>}
-                          <button className="btn btn-ghost" style={{padding:"2px 8px",fontSize:11,marginRight:4}} disabled={ocupado} onClick={()=>agAbrirReprogramar(a)}>Reprogramar</button>
-                          <button className="btn btn-ghost" style={{padding:"2px 8px",fontSize:11,marginRight:4}} disabled={ocupado} onClick={()=>agAbrirNoRealizado(a)}>No realizado</button>
-                          <button className="btn btn-ghost" style={{padding:"2px 8px",fontSize:11}} disabled={ocupado} onClick={()=>agCancelar(a)}>Cancelar</button>
-                        </>)}</td>
-                      </tr>
-                    );})}</tbody>
-                  </table>
-                  {rowsA.length===0&&<div style={{padding:"32px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay servicios activos en la agenda.</div>}
+                        <div key={t.id} style={{display:"flex",alignItems:"stretch",marginBottom:6}}>
+                          <div style={{width:120,flexShrink:0,fontSize:12,fontWeight:500,paddingRight:8,display:"flex",alignItems:"center"}}>{t.nombre}</div>
+                          <div
+                            onDragOver={e=>e.preventDefault()}
+                            onDrop={e=>{e.preventDefault();const rect=e.currentTarget.getBoundingClientRect();const frac=(e.clientX-rect.left)/rect.width;agAsignarDrag(t,timelinePosAHora(frac));}}
+                            style={{position:"relative",flex:1,height:44,background:"var(--surface-2)",borderRadius:6,border:agDragOrden?"1px dashed var(--signal)":"1px solid var(--border)",backgroundImage:`repeating-linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${100/(TIMELINE_HORA_FIN-TIMELINE_HORA_INICIO)}%)`}}
+                          >
+                            {servicios.map(s=>{
+                              const inicio=s.ventana_inicio?s.ventana_inicio.slice(0,5):`${String(TIMELINE_HORA_INICIO).padStart(2,"0")}:00`;
+                              const fin=s.ventana_fin?s.ventana_fin.slice(0,5):timelineSumarMin(inicio,TIMELINE_DURACION_DEFAULT_MIN);
+                              const left=timelineHoraAPct(inicio);
+                              const width=Math.max(3,timelineHoraAPct(fin)-left);
+                              const ocupado=agAccionId===s.id;
+                              const siguiente=SIGUIENTE_ESTADO[s.estatus];
+                              return(
+                                <div key={s.id} style={{position:"absolute",left:`${left}%`,width:`${width}%`,top:3,bottom:3}}>
+                                  <div onClick={()=>setAgBloqueAbierto(agBloqueAbierto===s.id?null:s.id)} title={`${s.cliente} · ${ESTADO_LABEL[s.estatus]}`}
+                                    style={{background:ESTADO_COLOR[s.estatus]||"#8997AB",color:"#fff",borderRadius:4,height:"100%",padding:"2px 6px",fontSize:10.5,fontWeight:600,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",cursor:"pointer"}}>
+                                    {s.cliente}
+                                  </div>
+                                  {agBloqueAbierto===s.id&&(
+                                    <div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#1E293B",borderRadius:8,padding:6,zIndex:20,minWidth:170,boxShadow:"0 8px 24px rgba(0,0,0,.25)",display:"flex",flexDirection:"column",gap:2}}>
+                                      {isAdmin&&siguiente&&<button className="btn btn-ghost" style={{fontSize:11,color:"#fff",justifyContent:"flex-start"}} disabled={ocupado} onClick={()=>{agAvanzarEstado(s);setAgBloqueAbierto(null);}}>→ {ESTADO_LABEL[siguiente]}</button>}
+                                      {isAdmin&&<button className="btn btn-ghost" style={{fontSize:11,color:"#fff",justifyContent:"flex-start"}} disabled={ocupado} onClick={()=>{agAbrirReprogramar(s);setAgBloqueAbierto(null);}}>Reprogramar</button>}
+                                      {isAdmin&&<button className="btn btn-ghost" style={{fontSize:11,color:"#fff",justifyContent:"flex-start"}} disabled={ocupado} onClick={()=>{agAbrirNoRealizado(s);setAgBloqueAbierto(null);}}>No realizado</button>}
+                                      {isAdmin&&<button className="btn btn-ghost" style={{fontSize:11,color:"#fff",justifyContent:"flex-start"}} disabled={ocupado} onClick={()=>{agCancelar(s);setAgBloqueAbierto(null);}}>Cancelar</button>}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </>
+              </div>
             ):(
               <>
                 <div className="odoo-table-wrap">

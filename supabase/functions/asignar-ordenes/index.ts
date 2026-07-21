@@ -350,7 +350,7 @@ Deno.serve(async (req) => {
 
     // ---- ASIGNAR (varias órdenes candidatas de MikroWisp de golpe) ----
     if (action === "asignar") {
-      const { ordenes, cuadrilla, tecnico_id, fecha_prog, prioridad, notas } = body;
+      const { ordenes, cuadrilla, tecnico_id, fecha_prog, prioridad, notas, ventana_inicio, ventana_fin } = body;
       if (!Array.isArray(ordenes) || ordenes.length === 0) {
         return json({ error: "No se recibieron órdenes para asignar" }, 400);
       }
@@ -367,6 +367,8 @@ Deno.serve(async (req) => {
         cuadrilla,
         tecnico_id: tecnico_id ?? null,
         fecha_prog,
+        ventana_inicio: ventana_inicio ?? null,
+        ventana_fin: ventana_fin ?? null,
         prioridad: prioridad ?? "Media",
         notas: notas ?? null,
         estatus: "asignado",
