@@ -303,6 +303,8 @@ function App(){
   const ESTADOS_TERMINALES=useMemo(()=>new Set(["finalizado","cancelado","no_realizado"]),[]);
   const ESTADO_LABEL={pendiente:"Pendiente",asignado:"Asignado",confirmado:"Confirmado",en_ruta:"En ruta",en_sitio:"En sitio",trabajando:"Trabajando",finalizado:"Finalizado",reprogramado:"Reprogramado",cancelado:"Cancelado",no_realizado:"No realizado"};
   const ESTADO_COLOR={pendiente:"#D6453F",no_realizado:"#D6453F",confirmado:"#D9A404",reprogramado:"#D9A404",asignado:"#2256C9",en_ruta:"#039BE5",en_sitio:"#EA580C",trabajando:"#EA580C",finalizado:"#1A7F4B",cancelado:"#8997AB"};
+  const TIPO_COLOR={instalacion:"#2256C9",ticket:"#F2780C"};
+  const TIPO_LABEL={instalacion:"Instalación",ticket:"Ticket"};
   const SIGUIENTE_ESTADO={pendiente:"asignado",asignado:"confirmado",confirmado:"en_ruta",en_ruta:"en_sitio",en_sitio:"trabajando",trabajando:"finalizado",reprogramado:"asignado"};
   const ESTADOS_ACTIVOS_ORDEN=["pendiente","asignado","confirmado","en_ruta","en_sitio","trabajando","reprogramado"];
   const [agTecnicos,setAgTecnicos]=useState([]);
@@ -1514,7 +1516,10 @@ function App(){
                     {rowsP.length===0&&<div style={{fontSize:12,color:"var(--text-dim)",padding:"12px 0"}}>No hay candidatos para {asigTipo==="instalacion"?"instalación":"ticket"}.</div>}
                     {rowsP.slice(0,150).map(r=>(
                       <div key={r.orden_id} draggable onDragStart={()=>setAgDragOrden(r)} onDragEnd={()=>setAgDragOrden(null)}
-                        style={{border:"1px solid var(--border)",borderRadius:8,padding:"7px 9px",cursor:"grab",background:"var(--surface)",opacity:agDragOrden?.orden_id===r.orden_id?0.4:1}}>
+                        style={{border:"1px solid var(--border)",borderLeft:`3px solid ${TIPO_COLOR[r.tipo]||"#8997AB"}`,borderRadius:8,padding:"7px 9px",cursor:"grab",background:"var(--surface)",opacity:agDragOrden?.orden_id===r.orden_id?0.4:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                          <span style={{fontSize:9.5,fontWeight:700,color:TIPO_COLOR[r.tipo]||"#8997AB",textTransform:"uppercase",letterSpacing:".04em"}}>{TIPO_LABEL[r.tipo]||r.tipo}</span>
+                        </div>
                         <div style={{fontSize:12,fontWeight:600}}>{r.cliente}</div>
                         <div style={{fontSize:11,color:"var(--text-muted)"}}>{r.zona||"Sin zona"}</div>
                       </div>
@@ -1549,8 +1554,8 @@ function App(){
                               const siguiente=SIGUIENTE_ESTADO[s.estatus];
                               return(
                                 <div key={s.id} style={{position:"absolute",left:`${left}%`,width:`${width}%`,top:3,bottom:3}}>
-                                  <div onClick={()=>setAgBloqueAbierto(agBloqueAbierto===s.id?null:s.id)} title={`${s.cliente} · ${ESTADO_LABEL[s.estatus]}`}
-                                    style={{background:ESTADO_COLOR[s.estatus]||"#8997AB",color:"#fff",borderRadius:4,height:"100%",padding:"2px 6px",fontSize:10.5,fontWeight:600,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",cursor:"pointer"}}>
+                                  <div onClick={()=>setAgBloqueAbierto(agBloqueAbierto===s.id?null:s.id)} title={`${TIPO_LABEL[s.tipo]||s.tipo} · ${s.cliente} · ${ESTADO_LABEL[s.estatus]}`}
+                                    style={{background:ESTADO_COLOR[s.estatus]||"#8997AB",borderTop:`3px solid ${TIPO_COLOR[s.tipo]||"#8997AB"}`,color:"#fff",borderRadius:4,height:"100%",padding:"2px 6px",fontSize:10.5,fontWeight:600,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",cursor:"pointer"}}>
                                     {s.cliente}
                                   </div>
                                   {agBloqueAbierto===s.id&&(
