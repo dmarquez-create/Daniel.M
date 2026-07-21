@@ -10,7 +10,10 @@
 //                                 de anticipo), fecha de anticipo pagado
 //   ?modulo=tickets           -> (default) todos los tickets, abiertos y cerrados:
 //                                 ID, nombre, fecha generado, fecha cierre (null si
-//                                 sigue abierto), estado, zona, motivo/asunto
+//                                 sigue abierto), estado, zona, motivo/asunto,
+//                                 teléfono (telefono o movil si telefono está vacío),
+//                                 dirección (usuarios.direccion_principal), coordenadas
+//                                 (usuarios.coordenadas_venta, formato "lat,lng" en texto)
 //   ?modulo=tickets_cerrados  -> solo tickets con estado='cerrado', mismas columnas
 //
 // Filtros opcionales: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (sobre fecha de generado)
@@ -282,7 +285,10 @@ Deno.serve(async (req) => {
           s.fecha_soporte AS fecha_generado,
           s.fecha_cerrado AS fecha_cierre,
           z.zona AS zona,
-          COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) AS motivo_asunto
+          COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) AS motivo_asunto,
+          COALESCE(NULLIF(u.telefono, ''), u.movil) AS telefono,
+          u.direccion_principal AS direccion,
+          u.coordenadas_venta AS coordenadas
         FROM soporte s
         LEFT JOIN usuarios u ON u.id = s.idcliente
         LEFT JOIN tblavisouser tau ON tau.cliente = s.idcliente
@@ -300,6 +306,9 @@ Deno.serve(async (req) => {
         fecha_cierre: r.fecha_cierre,
         zona: r.zona ?? "Sin zona",
         motivo_asunto: r.motivo_asunto || null,
+        telefono: r.telefono || null,
+        direccion: r.direccion || null,
+        coordenadas: r.coordenadas || null,
       }));
 
       return new Response(
@@ -352,7 +361,10 @@ Deno.serve(async (req) => {
         s.fecha_cerrado AS fecha_cierre,
         s.estado,
         z.zona AS zona,
-        COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) AS motivo_asunto
+        COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) AS motivo_asunto,
+        COALESCE(NULLIF(u.telefono, ''), u.movil) AS telefono,
+        u.direccion_principal AS direccion,
+        u.coordenadas_venta AS coordenadas
       FROM soporte s
       LEFT JOIN usuarios u ON u.id = s.idcliente
       LEFT JOIN tblavisouser tau ON tau.cliente = s.idcliente
@@ -371,6 +383,9 @@ Deno.serve(async (req) => {
       estado: r.estado, // abierto | cerrado | respondido | respuesta cliente
       zona: r.zona ?? "Sin zona",
       motivo_asunto: r.motivo_asunto || null,
+      telefono: r.telefono || null,
+      direccion: r.direccion || null,
+      coordenadas: r.coordenadas || null,
     }));
 
     return new Response(JSON.stringify({ count: tickets.length, tickets }), {

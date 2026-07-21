@@ -394,7 +394,8 @@ function App(){
           rows=(d.tickets||[]).filter(x=>x.estado!=="cerrado").map(x=>({
             orden_id:String(x.id),tipo:"ticket",cliente:x.nombre,
             motivo:x.motivo_asunto,zona:x.zona,
-            fecha_ref:x.fecha_generado
+            fecha_ref:x.fecha_generado,
+            telefono:x.telefono,direccion:x.direccion,coordenadas:x.coordenadas
           }));
         }
         setAsigData(rows);
@@ -1468,7 +1469,7 @@ function App(){
                   <table className="odoo-table">
                     <thead><tr>
                       <th style={{width:34}}><input type="checkbox" checked={rowsP.length>0&&asigSel.size===rowsP.length} onChange={asigToggleAll}/></th>
-                      <th>ID</th><th>Cliente</th><th>Motivo</th><th>Zona</th><th>Fecha</th>
+                      <th>ID</th><th>Cliente</th><th>Motivo</th><th>Zona</th><th>Dirección</th><th>Teléfono</th><th>Fecha</th>
                     </tr></thead>
                     <tbody>{rowsP.slice(0,200).map(r=>(
                       <tr key={r.orden_id} style={{background:asigSel.has(r.orden_id)?"rgba(34,86,201,.06)":undefined}}>
@@ -1477,6 +1478,8 @@ function App(){
                         <td style={{fontWeight:500,fontSize:12.5}}>{r.cliente}</td>
                         <td style={{fontSize:12,color:"var(--text-muted)"}} title={r.motivo||""}>{(r.motivo||"-").slice(0,34)}{(r.motivo||"").length>34?"…":""}</td>
                         <td style={{fontSize:12}}>{r.zona}</td>
+                        <td style={{fontSize:11.5,color:"var(--text-muted)"}} title={r.direccion||""}>{r.direccion?`${r.direccion.slice(0,30)}${r.direccion.length>30?"…":""}`:"-"}{r.coordenadas&&<a href={`https://www.google.com/maps?q=${r.coordenadas.replace(/\s+/g,"")}`} target="_blank" rel="noreferrer" style={{marginLeft:6,color:"var(--signal)"}}>↗</a>}</td>
+                        <td style={{fontSize:11.5,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>{r.telefono||"-"}</td>
                         <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,whiteSpace:"nowrap"}}>{r.fecha_ref?new Date(r.fecha_ref).toLocaleDateString("es-MX"):"-"}</td>
                       </tr>
                     ))}</tbody>
@@ -1522,6 +1525,10 @@ function App(){
                         </div>
                         <div style={{fontSize:12,fontWeight:600}}>{r.cliente}</div>
                         <div style={{fontSize:11,color:"var(--text-muted)"}}>{r.zona||"Sin zona"}</div>
+                        {r.tipo==="ticket"&&r.motivo&&<div style={{fontSize:10.5,color:"var(--text-dim)",marginTop:2}} title={r.motivo}>{r.motivo.slice(0,40)}{r.motivo.length>40?"…":""}</div>}
+                        {r.tipo==="ticket"&&r.direccion&&<div style={{fontSize:10.5,color:"var(--text-dim)",marginTop:2}} title={r.direccion}>📍 {r.direccion.slice(0,40)}{r.direccion.length>40?"…":""}</div>}
+                        {r.tipo==="ticket"&&r.telefono&&<div style={{fontSize:10.5,color:"var(--text-dim)",marginTop:2}}>📞 {r.telefono}</div>}
+                        {r.tipo==="ticket"&&r.coordenadas&&<a href={`https://www.google.com/maps?q=${r.coordenadas.replace(/\s+/g,"")}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:10.5,color:"var(--signal)",marginTop:2,display:"inline-block"}}>Ver en mapa ↗</a>}
                       </div>
                     ))}
                   </div>
