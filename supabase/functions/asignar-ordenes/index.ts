@@ -1,17 +1,31 @@
 // Edge Function: asignar-ordenes
-// Recibe una selección de órdenes (instalaciones pendientes o tickets abiertos)
-// y las guarda como asignaciones a una cuadrilla en la tabla
-// public.asignaciones_cuadrilla de Supabase.
+// Agenda Técnica (Fase 1) — gestiona la tabla public.agenda_servicios
+// (antes asignaciones_cuadrilla; ver migración
+// supabase/migrations/20260721101440_agenda_tecnica_fase1.sql).
 //
-// Además crea el evento correspondiente en la agenda (Google Calendar) de la
-// cuadrilla, delegando en la función `calendar-events`. Si Calendar falla, la
-// asignación se guarda igual y el motivo queda en la columna `evento_error`.
-// Al devolver o cancelar una asignación, el evento se borra de la agenda.
+// Estados (10, ver CHECK agenda_servicios_estatus_check):
+//   pendiente | asignado | confirmado | en_ruta | en_sitio | trabajando |
+//   finalizado | reprogramado | cancelado | no_realizado
+// Activos (protegidos por el índice único parcial ux_agenda_orden_activa,
+// impiden duplicar (tipo, orden_id)): todos excepto finalizado/cancelado/
+// no_realizado, que son terminales.
+//
+// Además crea/borra el evento correspondiente en la agenda (Google Calendar)
+// de la cuadrilla, delegando en la función `calendar-events`. Si Calendar
+// falla, la operación en la base se conserva igual y el motivo queda en la
+// columna `evento_error` (un problema de Calendar no debe bloquear la
+// operación — decisión de negocio ya documentada en CLAUDE.md).
 //
 // Acciones (via body.action):
-//   "asignar"    -> inserta asignaciones para varias órdenes de golpe + crea eventos
-//   "listar"     -> devuelve las asignaciones (opcionalmente filtradas por estatus)
-//   "actualizar" -> cambia estatus (completada/devuelta/cancelada) o reasigna
+//   "listar"       -> devuelve los servicios (opcionalmente filtrados por estatus/tipo)
+//   "asignar"      -> inserta servicios para varias órdenes de golpe (desde candidatos
+//                      MikroWisp) + crea eventos. Requiere admin.
+//   "crear_manual" -> crea un servicio nuevo sin origen MikroWisp. Requiere admin.
+//   "cambiar_estado" -> transición de estado de un servicio existente (genereliza la
+//                      antigua "actualizar"). Si el destino es "no_realizado", exige
+//                      motivo_no_realizado (FK validada por la base). Requiere admin.
+//   "reprogramar"  -> cambia técnico/fecha/ventana de un servicio activo (UPDATE en la
+//                      misma fila, no INSERT — sigue siendo el mismo servicio). Requiere admin.
 //
 // Seguridad: valida que el usuario autenticado sea el admin, del lado servidor,
 // además del RLS de la tabla. Mantener "Verify JWT with legacy secret" DESACTIVADO
@@ -27,6 +41,15 @@ const cors = {
 };
 
 const ADMIN_EMAIL = "dmarquez@nidix.mx";
+const TABLA = "agenda_servicios";
+
+// Estados terminales: no ocupan el índice único de "activos", así que una
+// orden puede reasignarse creando una fila nueva sin pisar el histórico.
+const ESTADOS_TERMINALES = new Set(["finalizado", "cancelado", "no_realizado"]);
+const ESTADOS_VALIDOS = new Set([
+  "pendiente", "asignado", "confirmado", "en_ruta", "en_sitio",
+  "trabajando", "finalizado", "reprogramado", "cancelado", "no_realizado",
+]);
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -53,11 +76,17 @@ async function crearEventoCalendar(
     const esInst = fila.tipo === "instalacion";
     const etiqueta = esInst ? "Instalación" : "Ticket";
     const titulo = `[${etiqueta}] ${fila.cliente ?? "Sin nombre"}`;
+    const ventana = fila.ventana_inicio
+      ? `Ventana: ${fila.ventana_inicio}${fila.ventana_fin ? ` - ${fila.ventana_fin}` : ""}`
+      : null;
     const partes = [
       `Orden: ${fila.orden_id}`,
       fila.motivo ? `Motivo: ${fila.motivo}` : null,
       fila.zona ? `Zona: ${fila.zona}` : null,
+      fila.direccion ? `Dirección: ${fila.direccion}` : null,
       `Prioridad: ${fila.prioridad}`,
+      ventana,
+      fila.material_requerido ? `Material: ${fila.material_requerido}` : null,
       fila.notas ? `\nNotas: ${fila.notas}` : null,
       `\nAsignado desde el Dashboard Nidix por ${fila.asignado_por}`,
     ].filter(Boolean);
@@ -71,7 +100,7 @@ async function crearEventoCalendar(
         fecha: fila.fecha_prog,
         titulo,
         descripcion: partes.join("\n"),
-        ubicacion: fila.zona ?? "",
+        ubicacion: fila.direccion || fila.zona || "",
       }),
     });
     const d = await res.json();
@@ -102,6 +131,14 @@ async function borrarEventoCalendar(
   }
 }
 
+// Genera un orden_id sintético para servicios creados manualmente (sin
+// origen MikroWisp), que no tienen un ID de instalación/ticket real.
+// Prefijo "M" para distinguirlos a simple vista de los IDs reales de
+// MikroWisp (numéricos).
+function ordenIdManual(): string {
+  return `M${Date.now()}${Math.floor(Math.random() * 1000)}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
@@ -129,29 +166,37 @@ Deno.serve(async (req) => {
 
     // ---- LISTAR ----
     if (action === "listar") {
-      let q = supabase.from("asignaciones_cuadrilla").select("*").order("creado_en", { ascending: false });
+      let q = supabase.from(TABLA).select("*").order("creado_en", { ascending: false });
       if (body.estatus) q = q.eq("estatus", body.estatus);
       if (body.tipo) q = q.eq("tipo", body.tipo);
       const { data, error } = await q;
       if (error) return json({ error: error.message }, 500);
-      return json({ asignaciones: data ?? [] });
+      return json({ servicios: data ?? [] });
     }
 
     // A partir de aquí se requiere admin (escritura)
-    if (!esAdmin) return json({ error: "Solo el administrador puede asignar órdenes" }, 403);
+    if (!esAdmin) return json({ error: "Solo el administrador puede modificar la agenda" }, 403);
 
-    // ---- ACTUALIZAR (estatus / reasignar) ----
-    if (action === "actualizar") {
-      const { id, cambios } = body;
-      if (!id || !cambios) return json({ error: "Faltan id o cambios" }, 400);
+    // ---- CAMBIAR ESTADO ----
+    if (action === "cambiar_estado") {
+      const { id, nuevo_estatus, cambios } = body;
+      if (!id || !nuevo_estatus) return json({ error: "Faltan id o nuevo_estatus" }, 400);
+      if (!ESTADOS_VALIDOS.has(nuevo_estatus)) {
+        return json({ error: `Estado no reconocido: ${nuevo_estatus}` }, 400);
+      }
+      if (nuevo_estatus === "no_realizado" && !cambios?.motivo_no_realizado) {
+        return json({ error: "Falta motivo_no_realizado para marcar como no realizado" }, 400);
+      }
 
-      // Si se devuelve o cancela, el evento debe salir de la agenda de la cuadrilla.
-      // (Al completarla el evento se conserva: es el registro de que el trabajo se hizo.)
+      // Si el destino es terminal y NO conserva el trabajo hecho (cancelado /
+      // no_realizado), el evento debe salir de la agenda de la cuadrilla.
+      // "finalizado" conserva el evento: es el registro de que el trabajo se hizo.
       let eventoBorrado = false;
       let eventoBorradoError: string | null = null;
-      if (cambios.estatus === "devuelta" || cambios.estatus === "cancelada") {
+      const permitido: Record<string, unknown> = { estatus: nuevo_estatus };
+      if (nuevo_estatus === "cancelado" || nuevo_estatus === "no_realizado") {
         const { data: actual } = await supabase
-          .from("asignaciones_cuadrilla")
+          .from(TABLA)
           .select("evento_id, evento_cal_id")
           .eq("id", id)
           .single();
@@ -159,34 +204,153 @@ Deno.serve(async (req) => {
           eventoBorradoError = await borrarEventoCalendar(actual.evento_id, actual.evento_cal_id);
           if (!eventoBorradoError) {
             eventoBorrado = true;
-            cambios.evento_id = null;
-            cambios.evento_cal_id = null;
+            permitido.evento_id = null;
+            permitido.evento_cal_id = null;
           }
         }
       }
 
-      const permitido: Record<string, unknown> = {};
-      for (const k of ["cuadrilla", "fecha_prog", "prioridad", "notas", "estatus", "evento_id", "evento_cal_id"]) {
-        if (cambios[k] !== undefined) permitido[k] = cambios[k];
+      for (const k of ["notas", "motivo_no_realizado"]) {
+        if (cambios?.[k] !== undefined) permitido[k] = cambios[k];
       }
       permitido["actualizado_en"] = new Date().toISOString();
+
       const { data, error } = await supabase
-        .from("asignaciones_cuadrilla")
+        .from(TABLA)
         .update(permitido)
         .eq("id", id)
         .select();
-      if (error) return json({ error: error.message }, 500);
+      if (error) {
+        if (error.code === "23503") {
+          return json({ error: "motivo_no_realizado no existe en el catálogo" }, 400);
+        }
+        return json({ error: error.message }, 500);
+      }
       return json({
         ok: true,
-        asignacion: data?.[0] ?? null,
+        servicio: data?.[0] ?? null,
         evento_borrado: eventoBorrado,
         evento_borrado_error: eventoBorradoError,
       });
     }
 
-    // ---- ASIGNAR (varias órdenes de golpe) ----
+    // ---- REPROGRAMAR (técnico y/o fecha/ventana de un servicio activo) ----
+    if (action === "reprogramar") {
+      const { id, tecnico_id, cuadrilla, fecha_prog, ventana_inicio, ventana_fin, notas } = body;
+      if (!id) return json({ error: "Falta id" }, 400);
+      if (!fecha_prog && !tecnico_id && !cuadrilla) {
+        return json({ error: "Nada que reprogramar: falta fecha_prog, tecnico_id o cuadrilla" }, 400);
+      }
+
+      const { data: actual, error: actualErr } = await supabase
+        .from(TABLA)
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (actualErr || !actual) return json({ error: "Servicio no encontrado" }, 404);
+
+      const permitido: Record<string, unknown> = { estatus: "reprogramado" };
+      if (tecnico_id !== undefined) permitido.tecnico_id = tecnico_id;
+      if (cuadrilla !== undefined) permitido.cuadrilla = cuadrilla;
+      if (fecha_prog !== undefined) permitido.fecha_prog = fecha_prog;
+      if (ventana_inicio !== undefined) permitido.ventana_inicio = ventana_inicio;
+      if (ventana_fin !== undefined) permitido.ventana_fin = ventana_fin;
+      if (notas !== undefined) permitido.notas = notas;
+      permitido["actualizado_en"] = new Date().toISOString();
+
+      // Si ya había evento en Calendar, se borra el viejo y se crea uno nuevo
+      // con los datos actualizados (misma resiliencia: si Calendar falla, el
+      // cambio en la base se conserva igual y el motivo queda en evento_error).
+      if (actual.evento_id && actual.evento_cal_id) {
+        await borrarEventoCalendar(actual.evento_id, actual.evento_cal_id);
+        permitido.evento_id = null;
+        permitido.evento_cal_id = null;
+        permitido.evento_error = null;
+      }
+
+      const { data, error } = await supabase
+        .from(TABLA)
+        .update(permitido)
+        .eq("id", id)
+        .select();
+      if (error) return json({ error: error.message }, 500);
+
+      const filaNueva = data?.[0];
+      let eventoOk = false;
+      let eventoError: string | null = null;
+      if (filaNueva) {
+        const r = await crearEventoCalendar(filaNueva);
+        eventoError = r.evento_error ?? null;
+        eventoOk = !eventoError;
+        await supabase
+          .from(TABLA)
+          .update({
+            evento_id: r.evento_id ?? null,
+            evento_cal_id: r.evento_cal_id ?? null,
+            evento_error: r.evento_error ?? null,
+          })
+          .eq("id", id);
+      }
+
+      return json({ ok: true, servicio: filaNueva ?? null, evento_creado: eventoOk, evento_error: eventoError });
+    }
+
+    // ---- CREAR MANUAL (servicio nuevo, sin origen MikroWisp) ----
+    if (action === "crear_manual") {
+      const {
+        tipo, cliente, zona, direccion, motivo, cuadrilla, tecnico_id,
+        fecha_prog, ventana_inicio, ventana_fin, tiempo_estimado_min,
+        material_requerido, prioridad, notas,
+      } = body;
+      if (!tipo || !cliente || !cuadrilla || !fecha_prog) {
+        return json({ error: "Faltan tipo, cliente, cuadrilla o fecha_prog" }, 400);
+      }
+      if (tipo !== "instalacion" && tipo !== "ticket") {
+        return json({ error: "tipo debe ser 'instalacion' o 'ticket'" }, 400);
+      }
+
+      const fila = {
+        tipo,
+        orden_id: ordenIdManual(),
+        cliente,
+        motivo: motivo ?? null,
+        zona: zona ?? null,
+        direccion: direccion ?? null,
+        cuadrilla,
+        tecnico_id: tecnico_id ?? null,
+        fecha_prog,
+        ventana_inicio: ventana_inicio ?? null,
+        ventana_fin: ventana_fin ?? null,
+        tiempo_estimado_min: tiempo_estimado_min ?? null,
+        material_requerido: material_requerido ?? null,
+        prioridad: prioridad ?? "Media",
+        notas: notas ?? null,
+        estatus: "asignado",
+        asignado_por: email,
+      };
+
+      const { data, error } = await supabase.from(TABLA).insert([fila]).select();
+      if (error) return json({ error: error.message }, 500);
+
+      const guardada = data?.[0];
+      let eventoOk = false;
+      let eventoError: string | null = null;
+      if (guardada) {
+        const r = await crearEventoCalendar(guardada);
+        eventoError = r.evento_error ?? null;
+        eventoOk = !eventoError;
+        await supabase
+          .from(TABLA)
+          .update({ evento_id: r.evento_id ?? null, evento_cal_id: r.evento_cal_id ?? null, evento_error: r.evento_error ?? null })
+          .eq("id", guardada.id);
+      }
+
+      return json({ ok: true, servicio: guardada ?? null, evento_creado: eventoOk, evento_error: eventoError });
+    }
+
+    // ---- ASIGNAR (varias órdenes candidatas de MikroWisp de golpe) ----
     if (action === "asignar") {
-      const { ordenes, cuadrilla, fecha_prog, prioridad, notas } = body;
+      const { ordenes, cuadrilla, tecnico_id, fecha_prog, prioridad, notas } = body;
       if (!Array.isArray(ordenes) || ordenes.length === 0) {
         return json({ error: "No se recibieron órdenes para asignar" }, 400);
       }
@@ -201,24 +365,25 @@ Deno.serve(async (req) => {
         motivo: o.motivo ?? null,
         zona: o.zona ?? null,
         cuadrilla,
+        tecnico_id: tecnico_id ?? null,
         fecha_prog,
         prioridad: prioridad ?? "Media",
         notas: notas ?? null,
-        estatus: "asignada",
+        estatus: "asignado",
         asignado_por: email,
       }));
 
-      // insert normal: el índice único parcial (solo estatus='asignada') impide
-      // duplicar una orden ya asignada, pero permite reasignar una devuelta/cancelada
-      // conservando el registro histórico anterior.
+      // insert normal: el índice único parcial (estados activos) impide
+      // duplicar una orden ya activa, pero permite reasignar una cancelada/
+      // no_realizada/finalizada conservando el registro histórico anterior.
       const { data, error } = await supabase
-        .from("asignaciones_cuadrilla")
+        .from(TABLA)
         .insert(filas)
         .select();
 
       if (error) {
         if (error.code === "23505") {
-          return json({ error: "Una o más de las órdenes seleccionadas ya están asignadas. Actualiza la vista e inténtalo de nuevo." }, 409);
+          return json({ error: "Una o más de las órdenes seleccionadas ya están activas en la agenda. Actualiza la vista e inténtalo de nuevo." }, 409);
         }
         return json({ error: error.message }, 500);
       }
@@ -234,7 +399,7 @@ Deno.serve(async (req) => {
         const r = await crearEventoCalendar(fila);
         if (r.evento_error) eventosFallidos++; else eventosOk++;
         await supabase
-          .from("asignaciones_cuadrilla")
+          .from(TABLA)
           .update({
             evento_id: r.evento_id ?? null,
             evento_cal_id: r.evento_cal_id ?? null,
@@ -248,7 +413,7 @@ Deno.serve(async (req) => {
         asignadas: guardadas.length,
         eventos_creados: eventosOk,
         eventos_fallidos: eventosFallidos,
-        asignaciones: guardadas,
+        servicios: guardadas,
       });
     }
 
