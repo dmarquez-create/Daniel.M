@@ -31,7 +31,7 @@
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
-const { BarChart, Bar, PieChart, Pie, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ZAxis, ReferenceLine } = Recharts;
+const { BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ZAxis, ReferenceLine } = Recharts;
 const { createClient } = supabase;
 const SUPABASE_URL = "https://alisslhkyxblpvwzutcx.supabase.co";
 const SUPABASE_KEY = "sb_publishable_NRCUvRvaZ-m6c5odhvUZzQ_b24-MeUi";
@@ -779,6 +779,25 @@ function App(){
   },[byRange]);
   const [diasZonaPage,setDiasZonaPage]=useState(1);
   useEffect(()=>{setDiasZonaPage(1);},[diasAtencionPorZonaData]);
+  // Pareto de órdenes fuera de SLA por zona (impacto absoluto = a cuántos
+  // clientes se les incumplió). Ordenado descendente con % acumulado; el
+  // volumen queda incorporado porque son conteos, no tasas.
+  const paretoSlaData=useMemo(()=>{
+    const build=(fueraFn,totalFn)=>{
+      const rows=diasAtencionPorZonaData
+        .map(z=>({name:z.name,fuera:fueraFn(z),total:totalFn(z)}))
+        .filter(r=>r.fuera>0)
+        .sort((a,b)=>b.fuera-a.fuera);
+      const totalFuera=rows.reduce((s,r)=>s+r.fuera,0);
+      let acc=0;
+      const withCum=rows.map(r=>{acc+=r.fuera;return{name:r.name,fuera:r.fuera,total:r.total,pctZona:r.total?Math.round((r.fuera/r.total)*100):0,acumPct:totalFuera?Math.round((acc/totalFuera)*100):0};});
+      return{rows:withCum.slice(0,12),totalFuera,totalZonas:withCum.length};
+    };
+    return{
+      inst:build(z=>z.nInst-z.nInstSla,z=>z.nInst),
+      tick:build(z=>z.nTick-z.nTickSla,z=>z.nTick),
+    };
+  },[diasAtencionPorZonaData]);
 
   // ---- Matriz de impacto por zona ----
   // Cruza volumen (eje X) contra tasa de incumplimiento (eje Y) para no
@@ -2350,6 +2369,46 @@ function App(){
                 </div>
               );
             })()}
+            {(tipoFilter==="todas"||tipoFilter==="Instalación")&&paretoSlaData.inst.rows.length>0&&(
+              <div className="chart-card" style={{gridColumn:"1 / -1"}}>
+                <div className="chart-title">Zonas con más instalaciones fuera de SLA (72h)</div>
+                <div style={{fontSize:11.5,color:"var(--text-muted)",marginBottom:10}}>
+                  Cantidad de instalaciones que superaron el SLA, ordenadas por impacto (a cuántos clientes se les incumplió). La línea es el % acumulado: las primeras zonas concentran la mayor parte de los incumplimientos. {paretoSlaData.inst.totalZonas>12?`Top 12 de ${paretoSlaData.inst.totalZonas} zonas · `:""}{numFmt(paretoSlaData.inst.totalFuera)} instalaciones fuera de SLA en total.
+                </div>
+                <ResponsiveContainer width="100%" height={340}>
+                  <ComposedChart data={paretoSlaData.inst.rows} margin={{top:14,right:10,bottom:90,left:6}}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+                    <XAxis dataKey="name" stroke="var(--text-dim)" fontSize={11} tickLine={false} interval={0} angle={-40} textAnchor="end"/>
+                    <YAxis yAxisId="left" stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={36} allowDecimals={false}/>
+                    <YAxis yAxisId="right" orientation="right" stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={40} domain={[0,100]} tickFormatter={v=>`${v}%`}/>
+                    <ReferenceLine yAxisId="right" y={80} stroke="var(--text-dim)" strokeDasharray="4 4"/>
+                    <Tooltip contentStyle={tooltipStyle} content={({active,payload})=>{if(!active||!payload||!payload.length)return null;const d=payload[0].payload;return(<div style={{...tooltipStyle,padding:"8px 10px",fontSize:12}}><div style={{fontWeight:600,marginBottom:4}}>{d.name}</div><div style={{color:"var(--critical)"}}>{numFmt(d.fuera)} fuera de SLA de {numFmt(d.total)} ({d.pctZona}%)</div><div style={{color:"var(--signal)",marginTop:2}}>Acumulado: {d.acumPct}%</div></div>);}}/>
+                    <Bar yAxisId="left" dataKey="fuera" name="Fuera de SLA" fill="var(--critical)" radius={[3,3,0,0]} maxBarSize={46}><LabelList dataKey="fuera" position="top" fontSize={10.5} fontWeight={600} fill="var(--text-muted)"/></Bar>
+                    <Line yAxisId="right" dataKey="acumPct" name="% acumulado" stroke="var(--signal)" strokeWidth={2} dot={{r:3,fill:"var(--signal)"}}/>
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {(tipoFilter==="todas"||tipoFilter==="Ticket")&&paretoSlaData.tick.rows.length>0&&(
+              <div className="chart-card" style={{gridColumn:"1 / -1"}}>
+                <div className="chart-title">Zonas con más tickets fuera de SLA (48h)</div>
+                <div style={{fontSize:11.5,color:"var(--text-muted)",marginBottom:10}}>
+                  Cantidad de tickets que superaron el SLA, ordenados por impacto (a cuántos clientes se les incumplió). La línea es el % acumulado: las primeras zonas concentran la mayor parte de los incumplimientos. {paretoSlaData.tick.totalZonas>12?`Top 12 de ${paretoSlaData.tick.totalZonas} zonas · `:""}{numFmt(paretoSlaData.tick.totalFuera)} tickets fuera de SLA en total.
+                </div>
+                <ResponsiveContainer width="100%" height={340}>
+                  <ComposedChart data={paretoSlaData.tick.rows} margin={{top:14,right:10,bottom:90,left:6}}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+                    <XAxis dataKey="name" stroke="var(--text-dim)" fontSize={11} tickLine={false} interval={0} angle={-40} textAnchor="end"/>
+                    <YAxis yAxisId="left" stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={36} allowDecimals={false}/>
+                    <YAxis yAxisId="right" orientation="right" stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={40} domain={[0,100]} tickFormatter={v=>`${v}%`}/>
+                    <ReferenceLine yAxisId="right" y={80} stroke="var(--text-dim)" strokeDasharray="4 4"/>
+                    <Tooltip contentStyle={tooltipStyle} content={({active,payload})=>{if(!active||!payload||!payload.length)return null;const d=payload[0].payload;return(<div style={{...tooltipStyle,padding:"8px 10px",fontSize:12}}><div style={{fontWeight:600,marginBottom:4}}>{d.name}</div><div style={{color:"var(--critical)"}}>{numFmt(d.fuera)} fuera de SLA de {numFmt(d.total)} ({d.pctZona}%)</div><div style={{color:"var(--signal)",marginTop:2}}>Acumulado: {d.acumPct}%</div></div>);}}/>
+                    <Bar yAxisId="left" dataKey="fuera" name="Fuera de SLA" fill="var(--amber)" radius={[3,3,0,0]} maxBarSize={46}><LabelList dataKey="fuera" position="top" fontSize={10.5} fontWeight={600} fill="var(--text-muted)"/></Bar>
+                    <Line yAxisId="right" dataKey="acumPct" name="% acumulado" stroke="var(--signal)" strokeWidth={2} dot={{r:3,fill:"var(--signal)"}}/>
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         </>
       )}
