@@ -12,16 +12,44 @@
 <link rel="manifest" href="/manifest.json"/>
 <link rel="apple-touch-icon" href="/icon-192.png"/>
 <title>Dashboard de Instalaciones y Tickets</title>
+<link rel="preconnect" href="https://unpkg.com" crossorigin/>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin/>
+<link rel="preconnect" href="https://alisslhkyxblpvwzutcx.supabase.co"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
 <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- PapaParse (CSV) y XLSX (Excel) se cargan bajo demanda vía ensureXLSX()/ensurePapa()
+     al importar/exportar — no bloquean la carga inicial (ahorran ~900 KB + ~20 KB). -->
+<script>
+  // Cargadores perezosos de librerías pesadas que solo se usan al importar/exportar.
+  window.__loadScriptOnce = window.__loadScriptOnce || function(src, globalName){
+    return new Promise(function(resolve, reject){
+      if (window[globalName]) return resolve(window[globalName]);
+      var existing = document.querySelector('script[data-lazy="'+globalName+'"]');
+      if (existing){ existing.addEventListener('load', function(){resolve(window[globalName]);}); existing.addEventListener('error', reject); return; }
+      var s = document.createElement('script');
+      s.src = src; s.async = true; s.setAttribute('data-lazy', globalName);
+      s.onload = function(){ resolve(window[globalName]); };
+      s.onerror = function(){ reject(new Error('No se pudo cargar '+globalName)); };
+      document.head.appendChild(s);
+    });
+  };
+  window.ensureXLSX = function(){ return window.__loadScriptOnce('https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js','XLSX'); };
+  window.ensurePapa = function(){ return window.__loadScriptOnce('https://unpkg.com/papaparse@5.4.1/papaparse.min.js','Papa'); };
+  // Service worker: cachea las librerías de CDN para que las visitas siguientes
+  // carguen casi instantáneo. Se registra al terminar la carga para no competir
+  // con los recursos iniciales. Ver sw.js para la estrategia de caché.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/sw.js').catch(function(){ /* sin SW la app funciona igual */ });
+    });
+  }
+</script>
 <style>
   html, body { margin: 0; padding: 0; background: #F8FAFC; }
   #root { min-height: 100vh; }
@@ -624,7 +652,7 @@ function App(){
     }
     return null;
   },[zonasSlaIndex]);
-  const handleZonasFile=useCallback(async file=>{setZonasImporting(true);setZonasError(null);try{const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
+  const handleZonasFile=useCallback(async file=>{setZonasImporting(true);setZonasError(null);try{await ensureXLSX();const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
     const norm=v=>String(v||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     const rawRecords=rows.map(r=>{const tipoRaw=String(r["Tipo de Zona"]||"").trim();const is247=norm(tipoRaw).includes("24/7")||norm(tipoRaw).includes("24 7")||norm(tipoRaw)==="24/6";const subzona=String(r["Subzona / Sitio"]||"").trim();if(!subzona)return null;return{region_zona:r["Región / Zona"]?String(r["Región / Zona"]).trim():null,subzona,tipo_zona:is247?"24/7":"Riesgo Operativo",meta_horas:is247?6:24,meta_sla:is247?99:96};}).filter(Boolean);
     if(!rawRecords.length)throw new Error("No se encontraron filas válidas. Verifica las columnas 'Subzona / Sitio' y 'Tipo de Zona'.");
@@ -634,7 +662,7 @@ function App(){
     await db.from("zonas_sla").delete().gt("id","00000000-0000-0000-0000-000000000000");
     const chunkSize=500;for(let i=0;i<records.length;i+=chunkSize){const{error:e}=await db.from("zonas_sla").insert(records.slice(i,i+chunkSize));if(e)throw new Error(e.message);}
     const{data:fresh}=await db.from("zonas_sla").select("*");setZonasSla(fresh||[]);logAudit("importar_zonas_sla",{archivo:file.name,registros:fresh?.length||0});}catch(e){setZonasError(e.message||"Error al importar el catálogo.");}finally{setZonasImporting(false);if(zonasFileRef.current)zonasFileRef.current.value="";}},[logAudit]);
-  const handleIngFile=useCallback(async file=>{setIngImporting(true);setIngError(null);try{const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array",cellDates:false,cellNF:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:true});
+  const handleIngFile=useCallback(async file=>{setIngImporting(true);setIngError(null);try{await ensureXLSX();const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array",cellDates:false,cellNF:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:true});
     const parseDate=v=>{if(!v&&v!==0)return null;if(typeof v==="number"){const d=new Date(Math.round((v-25569)*864e5));if(!isNaN(d.getTime()))return d.toISOString().slice(0,10);}if(typeof v==="string"){const s=v.trim().split(/[\s,–\-]+/)[0].trim();const parts=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(parts)return`${parts[3]}-${parts[2].padStart(2,"0")}-${parts[1].padStart(2,"0")}`;const d=new Date(s);if(!isNaN(d.getTime()))return d.toISOString().slice(0,10);}return null;};
     // Duración: SheetJS lee formato [h]:mm:ss como fracción decimal de día
     // Ej: 0:58:00 = 0.040277... días = 0.9667h
@@ -717,7 +745,7 @@ function App(){
   const handleCreateUser=useCallback(async e=>{e.preventDefault();setCreatingUser(true);setUserMgmtMsg(null);try{const res=await fetch(EDGE_FN,{method:"POST",headers:edgeHeaders(),body:JSON.stringify({action:"create",email:newEmail,password:newPassword})});const json=await res.json();if(json.error)throw new Error(json.error);setUserMgmtMsg({type:"ok",text:`Usuario ${newEmail} creado correctamente.`});setNewEmail("");setNewPassword("");logAudit("crear_usuario",{email_creado:newEmail});fetchUsers();}catch(e){setUserMgmtMsg({type:"err",text:e.message});}finally{setCreatingUser(false);}},[newEmail,newPassword,session,fetchUsers,logAudit]);
   const handleDeleteUser=useCallback(async(uid,email)=>{if(!window.confirm(`¿Eliminar al usuario ${email}?`))return;try{const res=await fetch(EDGE_FN,{method:"POST",headers:edgeHeaders(),body:JSON.stringify({action:"delete",uid})});const json=await res.json();if(json.error)throw new Error(json.error);setUserMgmtMsg({type:"ok",text:`Usuario ${email} eliminado.`});logAudit("eliminar_usuario",{email_eliminado:email});fetchUsers();}catch(e){setUserMgmtMsg({type:"err",text:e.message});}},[session,fetchUsers,logAudit]);
   useEffect(()=>{if(!session){setLoadingData(false);return;}(async()=>{setLoadingData(true);try{const rows=await fetchAllOrdenes();setData(rows);if(rows.length){const lastCreated=rows.reduce((max,r)=>(r.created_at&&r.created_at>max?r.created_at:max),rows[0].created_at||"");setMeta({rowCount:rows.length,importedAt:lastCreated||null});}}catch(e){setError("No se pudo conectar: "+(e.message||e));}finally{setLoadingData(false);}})();},[session]);
-  const handleFile=useCallback(async file=>{setImporting(true);setError(null);try{const ext=file.name.split(".").pop().toLowerCase();let rows=[];let sheetUsed=null;if(ext==="csv"){const text=await file.text();const parsed=Papa.parse(text,{header:true,skipEmptyLines:true});rows=parsed.data;sheetUsed="CSV";}else if(ext==="xlsx"||ext==="xls"){const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array",cellDates:true});sheetUsed=pickAgendaSheet(wb);rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetUsed],{defval:null});}else{throw new Error("Formato no soportado.");}const {records,skipped}=processRows(rows);if(!records.length)throw new Error(`No se encontraron órdenes válidas en "${sheetUsed}".`);await replaceAllOrdenes(records);const freshRows=await fetchAllOrdenes();setData(freshRows);setMeta({filename:file.name,sheet:sheetUsed,importedAt:new Date().toISOString(),rowCount:freshRows.length,skipped});logAudit("importar_datos",{archivo:file.name,hoja:sheetUsed,registros:freshRows.length,omitidos:skipped});}catch(e){setError(e.message||"Error al importar.");}finally{setImporting(false);if(fileInputRef.current)fileInputRef.current.value="";}},[logAudit]);
+  const handleFile=useCallback(async file=>{setImporting(true);setError(null);try{const ext=file.name.split(".").pop().toLowerCase();let rows=[];let sheetUsed=null;if(ext==="csv"){await ensurePapa();const text=await file.text();const parsed=Papa.parse(text,{header:true,skipEmptyLines:true});rows=parsed.data;sheetUsed="CSV";}else if(ext==="xlsx"||ext==="xls"){await ensureXLSX();const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:"array",cellDates:true});sheetUsed=pickAgendaSheet(wb);rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetUsed],{defval:null});}else{throw new Error("Formato no soportado.");}const {records,skipped}=processRows(rows);if(!records.length)throw new Error(`No se encontraron órdenes válidas en "${sheetUsed}".`);await replaceAllOrdenes(records);const freshRows=await fetchAllOrdenes();setData(freshRows);setMeta({filename:file.name,sheet:sheetUsed,importedAt:new Date().toISOString(),rowCount:freshRows.length,skipped});logAudit("importar_datos",{archivo:file.name,hoja:sheetUsed,registros:freshRows.length,omitidos:skipped});}catch(e){setError(e.message||"Error al importar.");}finally{setImporting(false);if(fileInputRef.current)fileInputRef.current.value="";}},[logAudit]);
   const handleClear=useCallback(async()=>{if(!window.confirm("Esto borrará todos los datos. ¿Continuar?"))return;try{const total=data.length;const {error:e}=await db.from("ordenes").delete().gt("id",0);if(e)throw e;logAudit("borrar_datos",{registros_eliminados:total});setData([]);setMeta(null);}catch(e){setError("No se pudo borrar: "+(e.message||e));}},[logAudit,data.length]);
   const daysInSelectedMonth=useMemo(()=>new Date(2026,parseInt(month,10),0).getDate(),[month]);
   useEffect(()=>{setDayFrom(1);setDayTo(daysInSelectedMonth);},[month,daysInSelectedMonth]);
@@ -1659,7 +1687,8 @@ function App(){
               </div>
               <div className="actions">
                 <button className="btn" onClick={()=>{setMwInstData([]);setActiveModule("_");setTimeout(()=>setActiveModule("mw_instalaciones"),50);}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Actualizar</button>
-                <button className="btn btn-primary" onClick={()=>{
+                <button className="btn btn-primary" onClick={async()=>{
+                  await ensureXLSX();
                   const ws_data=[["ID","Nombre","Dirección principal","Zona","Instalado","Plan","Fecha generado","Fecha instalado","Fecha anticipo pagado"],...rows.map(r=>[r.id,r.nombre,r.direccion_principal,r.zona,r.instalado,r.plan,r.fecha_generado?new Date(r.fecha_generado).toLocaleDateString("es-MX"):"",r.fecha_instalado?new Date(r.fecha_instalado).toLocaleDateString("es-MX"):"",r.fecha_anticipo_pagado?new Date(r.fecha_anticipo_pagado).toLocaleDateString("es-MX"):""])];
                   const ws=XLSX.utils.aoa_to_sheet(ws_data);
                   const wb=XLSX.utils.book_new();
@@ -1758,7 +1787,8 @@ function App(){
               </div>
               <div className="actions">
                 <button className="btn" onClick={()=>{setMwTicketsData([]);setActiveModule("_");setTimeout(()=>setActiveModule("mw_tickets"),50);}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Actualizar</button>
-                <button className="btn btn-primary" onClick={()=>{
+                <button className="btn btn-primary" onClick={async()=>{
+                  await ensureXLSX();
                   const ws_data=[["ID","Nombre","Fecha generado","Fecha cierre","Estado","Zona","Motivo/Asunto"],...rows.map(r=>[r.id,r.nombre,r.fecha_generado?new Date(r.fecha_generado).toLocaleString("es-MX"):"",r.fecha_cierre?new Date(r.fecha_cierre).toLocaleString("es-MX"):"",r.estado,r.zona,r.motivo_asunto||""])];
                   const ws=XLSX.utils.aoa_to_sheet(ws_data);
                   const wb=XLSX.utils.book_new();
@@ -1890,7 +1920,8 @@ function App(){
                 const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
                 const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`ordenes_odoo_${new Date().toISOString().slice(0,10)}.csv`;a.click();
               }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV</button>
-              <button className="btn btn-primary" onClick={()=>{
+              <button className="btn btn-primary" onClick={async()=>{
+                await ensureXLSX();
                 const ws_data=[["Orden","Servicio","Cliente","Estatus","Técnico","Dirección","Teléfono","Fecha agendada","Creación"],...odooFiltered.map(o=>[o.name?.match(/S\d+/)?.[0]||"",o.name?.replace(/S\d+ - /,"")||"",o.partner_id?o.partner_id[1]:"",o.stage_id?o.stage_id[1]:"",(o.technician_names||[]).join(", "),o.partner_street||"",o.partner_phone||"",o.planned_date_begin?new Date(o.planned_date_begin).toLocaleString("es-MX"):"",o.create_date?new Date(o.create_date).toLocaleDateString("es-MX"):""])];
                 const ws=XLSX.utils.aoa_to_sheet(ws_data);
                 ws["!cols"]=[{wch:10},{wch:50},{wch:35},{wch:18},{wch:30},{wch:35},{wch:18},{wch:20},{wch:14}];
