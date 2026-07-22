@@ -168,6 +168,13 @@ function App(){
   const [theme,setTheme]=useState(()=>{try{return localStorage.getItem("nidix-theme")||"light";}catch(_){return "light";}});
   useEffect(()=>{document.documentElement.setAttribute("data-theme",theme);try{localStorage.setItem("nidix-theme",theme);}catch(_){}
     const m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",theme==="dark"?"#0E1019":"#0F172A");},[theme]);
+  // Marca la sección activa en <html> para pintar el fondo temático por CSS:
+  // Operaciones = grid técnico + rutas de despacho; Ingeniería = malla de red.
+  useEffect(()=>{
+    const ops=["dashboard","agentes","agenda","odoo","mw_instalaciones","mw_tickets","asignacion"];
+    const sec=activeModule==="ingenieria"?"ingenieria":(ops.includes(activeModule)?"operaciones":"otro");
+    document.documentElement.setAttribute("data-section",sec);
+  },[activeModule]);
   const [sidebarOpen,setSidebarOpen]=useState(true);
   const [mobSidebarOpen,setMobSidebarOpen]=useState(false);
   const [operacionesOpen,setOperacionesOpen]=useState(true);
@@ -1038,6 +1045,12 @@ function App(){
         .main{margin-left:var(--sw);flex:1;transition:margin-left .22s cubic-bezier(.4,0,.2,1);min-width:0;}
         .main.col{margin-left:58px;}
         .app{background:var(--ink);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;padding:28px 24px 60px;}
+        /* Fondo temático por sección (marca de agua sutil, adaptado a claro/oscuro).
+           El color base --ink se mantiene; el SVG va encima a baja opacidad. */
+        :root[data-section="operaciones"] .app{background-color:var(--ink);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cg fill='none' stroke='%232256C9' stroke-opacity='0.05' stroke-width='1'%3E%3Cpath d='M0 44H220M0 88H220M0 132H220M0 176H220M44 0V220M88 0V220M132 0V220M176 0V220'/%3E%3C/g%3E%3Cpath d='M14 200 L74 128 L128 150 L206 54' fill='none' stroke='%232256C9' stroke-opacity='0.09' stroke-width='1.5' stroke-dasharray='3 6' stroke-linecap='round'/%3E%3Cg fill='%23F2780C' fill-opacity='0.12'%3E%3Ccircle cx='74' cy='128' r='3'/%3E%3Ccircle cx='128' cy='150' r='3'/%3E%3Ccircle cx='206' cy='54' r='3'/%3E%3C/g%3E%3C/svg%3E");background-size:220px 220px;}
+        :root[data-section="ingenieria"] .app{background-color:var(--ink);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cg stroke='%232256C9' stroke-opacity='0.07' stroke-width='1' fill='none'%3E%3Cpath d='M34 46 L104 78 L168 40 M104 78 L138 150 L64 176 M138 150 L200 128 M34 46 L20 120 L64 176'/%3E%3C/g%3E%3Cg fill='%232256C9' fill-opacity='0.10'%3E%3Ccircle cx='34' cy='46' r='2.6'/%3E%3Ccircle cx='104' cy='78' r='3.2'/%3E%3Ccircle cx='168' cy='40' r='2.6'/%3E%3Ccircle cx='138' cy='150' r='3'/%3E%3Ccircle cx='64' cy='176' r='2.6'/%3E%3Ccircle cx='200' cy='128' r='2.4'/%3E%3Ccircle cx='20' cy='120' r='2.4'/%3E%3C/g%3E%3C/svg%3E");background-size:220px 220px;}
+        :root[data-theme="dark"][data-section="operaciones"] .app{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cg fill='none' stroke='%23FFFFFF' stroke-opacity='0.035' stroke-width='1'%3E%3Cpath d='M0 44H220M0 88H220M0 132H220M0 176H220M44 0V220M88 0V220M132 0V220M176 0V220'/%3E%3C/g%3E%3Cpath d='M14 200 L74 128 L128 150 L206 54' fill='none' stroke='%238AA0FF' stroke-opacity='0.10' stroke-width='1.5' stroke-dasharray='3 6' stroke-linecap='round'/%3E%3Cg fill='%23F2A65C' fill-opacity='0.12'%3E%3Ccircle cx='74' cy='128' r='3'/%3E%3Ccircle cx='128' cy='150' r='3'/%3E%3Ccircle cx='206' cy='54' r='3'/%3E%3C/g%3E%3C/svg%3E");}
+        :root[data-theme="dark"][data-section="ingenieria"] .app{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cg stroke='%23A9B8E0' stroke-opacity='0.09' stroke-width='1' fill='none'%3E%3Cpath d='M34 46 L104 78 L168 40 M104 78 L138 150 L64 176 M138 150 L200 128 M34 46 L20 120 L64 176'/%3E%3C/g%3E%3Cg fill='%23A9B8E0' fill-opacity='0.12'%3E%3Ccircle cx='34' cy='46' r='2.6'/%3E%3Ccircle cx='104' cy='78' r='3.2'/%3E%3Ccircle cx='168' cy='40' r='2.6'/%3E%3Ccircle cx='138' cy='150' r='3'/%3E%3Ccircle cx='64' cy='176' r='2.6'/%3E%3Ccircle cx='200' cy='128' r='2.4'/%3E%3Ccircle cx='20' cy='120' r='2.4'/%3E%3C/g%3E%3C/svg%3E");}
         .dash-sticky{position:sticky;top:var(--topnav-h);z-index:55;background:var(--ink);margin:-16px -24px 0;padding:16px 24px 0;border-bottom:1px solid var(--border);}
         .header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:8px;}
         .title-block{display:flex;flex-direction:column;gap:4px;}
