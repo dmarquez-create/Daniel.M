@@ -146,7 +146,7 @@ function KpiRingCard({label,pct,sub,accent,tooltip,useSemaforo=true}){
   // Glow tenue solo si el color es hex (los que llegan como var() no lo llevan).
   const glow=(typeof ringColor==="string"&&ringColor.startsWith("#"))?`drop-shadow(0 0 3px ${ringColor}55)`:"none";
   return(
-    <div className="kpi-card" style={{display:"flex",alignItems:"center",gap:14,position:"relative",cursor:tooltip?"default":undefined}} onMouseEnter={()=>tooltip&&setHover(true)} onMouseLeave={()=>tooltip&&setHover(false)}>
+    <div className="kpi-card" style={{display:"flex",alignItems:"center",gap:14,position:"relative",cursor:tooltip?"default":undefined,zIndex:hover?50:undefined}} onMouseEnter={()=>tooltip&&setHover(true)} onMouseLeave={()=>tooltip&&setHover(false)}>
       <svg width="64" height="64" viewBox="0 0 64 64" style={{flexShrink:0,transform:"rotate(-90deg)"}}>
         <defs><linearGradient id={gid} x1="0" y1="0" x2="1" y2="1"><stop offset="0%" style={{stopColor:ringColor,stopOpacity:1}}/><stop offset="100%" style={{stopColor:ringColor,stopOpacity:0.55}}/></linearGradient></defs>
         <circle cx="32" cy="32" r={r} fill="none" stroke="var(--ring-track)" strokeWidth="6"/>
