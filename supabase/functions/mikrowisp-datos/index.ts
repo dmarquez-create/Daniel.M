@@ -267,7 +267,10 @@ Deno.serve(async (req) => {
       //   AND ${NORM_MOTIVO_SQL} IN (${MOTIVOS_PLACEHOLDERS})  y  paramsTc = [...MOTIVOS_NORMALIZADOS, ...]
       // Se excluyen siempre los motivos que contengan "retiro" o "baja de servicio".
       // Se excluyen siempre las zonas de ZONAS_EXCLUIDAS_TICKETS (ver definición arriba).
-      let whereTc = ` AND s.estado = 'cerrado' AND s.dp = 5 AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%retiro%' AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%baja de servicio%' AND ${ZONAS_EXCLUIDAS_SQL}`;
+      // Se excluyen también los clientes marcados con "R-E" en el nombre
+      // (ej. "Daniela Gonzalez Estrada R-E"). Se usa '% R-E%' (con espacio antes)
+      // para no eliminar apellidos con guion tipo "Aguilar-Espinoza".
+      let whereTc = ` AND s.estado = 'cerrado' AND s.dp = 5 AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%retiro%' AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%baja de servicio%' AND COALESCE(u.nombre, '') NOT LIKE '% R-E%' AND ${ZONAS_EXCLUIDAS_SQL}`;
       const paramsTc: string[] = [...ZONAS_EXCLUIDAS_PARAMS];
       if (desde) {
         whereTc += " AND s.fecha_cerrado >= ?";
@@ -328,7 +331,10 @@ Deno.serve(async (req) => {
     //   AND ${NORM_MOTIVO_SQL} IN (${MOTIVOS_PLACEHOLDERS})  y  params = [...MOTIVOS_NORMALIZADOS, ...]
     // Se excluyen siempre los motivos que contengan "retiro" o "baja de servicio".
     // Se excluyen siempre las zonas de ZONAS_EXCLUIDAS_TICKETS (ver definición arriba).
-    let where = ` AND s.dp = 5 AND s.estado != 'respondido' AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%retiro%' AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%baja de servicio%' AND ${ZONAS_EXCLUIDAS_SQL}`;
+    // Se excluyen también los clientes marcados con "R-E" en el nombre
+    // (ej. "Daniela Gonzalez Estrada R-E"). '% R-E%' con espacio antes para no
+    // eliminar apellidos con guion tipo "Aguilar-Espinoza".
+    let where = ` AND s.dp = 5 AND s.estado != 'respondido' AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%retiro%' AND COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) NOT LIKE '%baja de servicio%' AND COALESCE(u.nombre, '') NOT LIKE '% R-E%' AND ${ZONAS_EXCLUIDAS_SQL}`;
     const params: string[] = [...ZONAS_EXCLUIDAS_PARAMS];
     if (desde && hasta) {
       where += ` AND (
