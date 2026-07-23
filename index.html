@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
@@ -218,6 +218,7 @@ function App(){
   const [mwMotivoFilter,setMwMotivoFilter]=useState("");
   const [matrizMotivo,setMatrizMotivo]=useState("");
   const [matrizMinVol,setMatrizMinVol]=useState(30);
+  const [promMinOrd,setPromMinOrd]=useState(40);
   const [mwInstZonaFilter,setMwInstZonaFilter]=useState("");
   const [mwTicketZonaFilter,setMwTicketZonaFilter]=useState("");
   const [mwTicketEstadoFilter,setMwTicketEstadoFilter]=useState("abierto");
@@ -776,6 +777,18 @@ function App(){
   const ticketsProjection=useMemo(()=>{if(!byRange.length||!monthStats.diasLaborados)return null;const realizados=byRange.filter(r=>r.tipo==="Ticket"&&r.estatus==="Realizado").length;const tasa=realizados/monthStats.diasLaborados;return{realizados,tasaDiaria:tasa,proyeccion:tasa*monthStats.diasHabiles};},[byRange,monthStats]);
   const diasAtencionInst=useMemo(()=>promedioAtencion(byRange,"Instalación"),[byRange]);
   const diasAtencionTick=useMemo(()=>promedioAtencion(byRange,"Ticket"),[byRange]);
+  // Promedio diario de órdenes realizadas excluyendo técnicos con poca carga
+  // (menos de promMinOrd órdenes en el período). Umbral ajustable; se muestra
+  // cuántos técnicos entran/salen para que sea transparente.
+  const promDiarioSinBajos=useMemo(()=>{
+    if(!filtered.length||!monthStats.diasLaborados)return null;
+    const norm=s=>s?s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," "):"";
+    const porTec=new Map();
+    filtered.forEach(r=>{const k=norm(r.tecnico);if(!k||k==="sin asignar")return;if(!porTec.has(k))porTec.set(k,{total:0,real:0});const t=porTec.get(k);t.total++;if(r.estatus==="Realizado")t.real++;});
+    let realIncluidas=0,incluidos=0,excluidos=0;
+    porTec.forEach(t=>{if(t.total>=promMinOrd){realIncluidas+=t.real;incluidos++;}else excluidos++;});
+    return{avg:realIncluidas/monthStats.diasLaborados,incluidos,excluidos,realIncluidas};
+  },[filtered,monthStats,promMinOrd]);
   // SLA de atención: Instalaciones 72 h (3 días), Tickets 48 h (2 días). Meta: ≥95% dentro del plazo.
   const SLA_META_PCT=95;
   const slaData=useMemo(()=>{
@@ -2327,6 +2340,20 @@ function App(){
             {(tipoFilter==="todas"||tipoFilter==="Ticket")&&diasAtencionTick!==null&&(<KpiCardM icon={Clock} label="Días prom. de atención — Tickets" value={diasAtencionTick.toFixed(1)} sub="Promedio días entre creación y atención (realizados)" accent="var(--amber)"/>)}
             {(tipoFilter==="todas"||tipoFilter==="Instalación")&&slaData.inst&&(<KpiRingCardM label="SLA de atención — Instalaciones (72h)" pct={slaData.inst.pct} useSemaforo={false} accent={slaData.inst.pct>=SLA_META_PCT?"#22C55E":"#DC2626"} sub={`Meta ≥${SLA_META_PCT}% · ${numFmt(slaData.inst.dentro)} de ${numFmt(slaData.inst.total)}`} tooltip={<><div style={{fontWeight:600,marginBottom:6}}>SLA de atención — Instalaciones</div><div>Plazo: 72 horas (3 días) desde creación hasta atención</div><div>Meta de cumplimiento: {SLA_META_PCT}% mínimo</div><div style={{marginTop:4}}>Dentro del plazo: {numFmt(slaData.inst.dentro)} de {numFmt(slaData.inst.total)} realizadas</div></>}/>)}
             {(tipoFilter==="todas"||tipoFilter==="Ticket")&&slaData.tick&&(<KpiRingCardM label="SLA de atención — Tickets (48h)" pct={slaData.tick.pct} useSemaforo={false} accent={slaData.tick.pct>=SLA_META_PCT?"#22C55E":"#DC2626"} sub={`Meta ≥${SLA_META_PCT}% · ${numFmt(slaData.tick.dentro)} de ${numFmt(slaData.tick.total)}`} tooltip={<><div style={{fontWeight:600,marginBottom:6}}>SLA de atención — Tickets</div><div>Plazo: 48 horas (2 días) desde creación hasta atención</div><div>Meta de cumplimiento: {SLA_META_PCT}% mínimo</div><div style={{marginTop:4}}>Dentro del plazo: {numFmt(slaData.tick.dentro)} de {numFmt(slaData.tick.total)} realizados</div></>}/>)}
+            {promDiarioSinBajos&&(
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{color:"var(--signal)"}}><TrendingUp size={18} strokeWidth={2}/></div>
+                <div className="kpi-label">Prom. diario — órdenes realizadas</div>
+                <div className="kpi-value">{promDiarioSinBajos.avg.toFixed(1)}<span style={{fontSize:13,color:"var(--text-dim)",fontWeight:400}}>/día</span></div>
+                <div className="kpi-sub">{promDiarioSinBajos.incluidos} técnicos · excluye {promDiarioSinBajos.excluidos} con &lt;{promMinOrd} órd</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8}}>
+                  <span style={{fontSize:10.5,color:"var(--text-dim)"}}>Mín. carga:</span>
+                  <select className="odoo-select" style={{fontSize:11,padding:"3px 6px"}} value={promMinOrd} onChange={e=>setPromMinOrd(Number(e.target.value))}>
+                    {[20,30,40,50,60].map(n=>(<option key={n} value={n}>{n}</option>))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>)}
           <div className="chart-grid">
             <div className="chart-card" style={{gridColumn:"1 / -1",marginTop:28}}><div className="chart-title">Cumplimiento por tipo de orden — Últimos 4 meses (%)</div><ResponsiveContainer width="100%" height={280}><BarChart data={cumplimiento3MesesData} margin={{top:14,right:20,bottom:10,left:10}} barGap={4} barCategoryGap="28%"><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="mes" stroke="var(--text-dim)" fontSize={12} tickLine={false}/><YAxis stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={36} domain={[0,100]} tickFormatter={v=>`${v}%`}/><Tooltip contentStyle={tooltipStyle} formatter={v=>[`${v}%`,"Cumplimiento"]}/><Legend wrapperStyle={{fontSize:12}}/>{(tipoFilter==="todas"||tipoFilter==="Instalación")&&<Bar dataKey="Instalación" name="Instalación" fill="#94A3B8" maxBarSize={48} radius={[4,4,0,0]}>{cumplimiento3MesesData.map((e,i)=>(<Cell key={i} fill={semaforoGrad(e.Instalación)}/>))}<LabelList dataKey="Instalación" position="top" offset={6} fontSize={10} fill="var(--chart-label)" formatter={v=>`${v}%`}/></Bar>}{(tipoFilter==="todas"||tipoFilter==="Ticket")&&<Bar dataKey="Ticket" name="Ticket" fill="#94A3B8" maxBarSize={48} radius={[4,4,0,0]}>{cumplimiento3MesesData.map((e,i)=>(<Cell key={i} fill={semaforoGrad(e.Ticket)}/>))}<LabelList dataKey="Ticket" position="top" offset={6} fontSize={10} fill="var(--chart-label)" formatter={v=>`${v}%`}/></Bar>}</BarChart></ResponsiveContainer></div>
