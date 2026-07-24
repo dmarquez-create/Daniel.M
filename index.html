@@ -789,6 +789,13 @@ function App(){
     porTec.forEach(t=>{if(t.total>=promMinOrd){realIncluidas+=t.real;incluidos++;}else excluidos++;});
     return{avg:realIncluidas/monthStats.diasLaborados,incluidos,excluidos,realIncluidas};
   },[filtered,monthStats,promMinOrd]);
+  // Compañera: promedio diario contemplando TODOS los técnicos (sin excluir).
+  const promDiarioTodos=useMemo(()=>{
+    if(!filtered.length||!monthStats.diasLaborados)return null;
+    const tecs=new Set();let real=0;
+    filtered.forEach(r=>{const k=normalizeName(r.tecnico);if(!k||k==="sin asignar")return;tecs.add(k);if(r.estatus==="Realizado")real++;});
+    return{avg:real/monthStats.diasLaborados,tecnicos:tecs.size};
+  },[filtered,monthStats]);
   // SLA de atención: Instalaciones 72 h (3 días), Tickets 48 h (2 días). Meta: ≥95% dentro del plazo.
   const SLA_META_PCT=95;
   const slaData=useMemo(()=>{
@@ -2340,6 +2347,14 @@ function App(){
             {(tipoFilter==="todas"||tipoFilter==="Ticket")&&diasAtencionTick!==null&&(<KpiCardM icon={Clock} label="Días prom. de atención — Tickets" value={diasAtencionTick.toFixed(1)} sub="Promedio días entre creación y atención (realizados)" accent="var(--amber)"/>)}
             {(tipoFilter==="todas"||tipoFilter==="Instalación")&&slaData.inst&&(<KpiRingCardM label="SLA de atención — Instalaciones (72h)" pct={slaData.inst.pct} useSemaforo={false} accent={slaData.inst.pct>=SLA_META_PCT?"#22C55E":"#DC2626"} sub={`Meta ≥${SLA_META_PCT}% · ${numFmt(slaData.inst.dentro)} de ${numFmt(slaData.inst.total)}`} tooltip={<><div style={{fontWeight:600,marginBottom:6}}>SLA de atención — Instalaciones</div><div>Plazo: 72 horas (3 días) desde creación hasta atención</div><div>Meta de cumplimiento: {SLA_META_PCT}% mínimo</div><div style={{marginTop:4}}>Dentro del plazo: {numFmt(slaData.inst.dentro)} de {numFmt(slaData.inst.total)} realizadas</div></>}/>)}
             {(tipoFilter==="todas"||tipoFilter==="Ticket")&&slaData.tick&&(<KpiRingCardM label="SLA de atención — Tickets (48h)" pct={slaData.tick.pct} useSemaforo={false} accent={slaData.tick.pct>=SLA_META_PCT?"#22C55E":"#DC2626"} sub={`Meta ≥${SLA_META_PCT}% · ${numFmt(slaData.tick.dentro)} de ${numFmt(slaData.tick.total)}`} tooltip={<><div style={{fontWeight:600,marginBottom:6}}>SLA de atención — Tickets</div><div>Plazo: 48 horas (2 días) desde creación hasta atención</div><div>Meta de cumplimiento: {SLA_META_PCT}% mínimo</div><div style={{marginTop:4}}>Dentro del plazo: {numFmt(slaData.tick.dentro)} de {numFmt(slaData.tick.total)} realizados</div></>}/>)}
+            {promDiarioTodos&&(
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{color:"var(--amber)"}}><TrendingUp size={18} strokeWidth={2}/></div>
+                <div className="kpi-label">Prom. diario — todos los técnicos</div>
+                <div className="kpi-value">{promDiarioTodos.avg.toFixed(1)}<span style={{fontSize:13,color:"var(--text-dim)",fontWeight:400}}>/día</span></div>
+                <div className="kpi-sub">{promDiarioTodos.tecnicos} técnicos · sin excluir a nadie</div>
+              </div>
+            )}
             {promDiarioSinBajos&&(
               <div className="kpi-card">
                 <div className="kpi-icon" style={{color:"var(--signal)"}}><TrendingUp size={18} strokeWidth={2}/></div>
