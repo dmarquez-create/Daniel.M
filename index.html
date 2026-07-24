@@ -787,14 +787,15 @@ function App(){
     filtered.forEach(r=>{const k=norm(r.tecnico);if(!k||k==="sin asignar")return;if(!porTec.has(k))porTec.set(k,{total:0,real:0});const t=porTec.get(k);t.total++;if(r.estatus==="Realizado")t.real++;});
     let realIncluidas=0,incluidos=0,excluidos=0;
     porTec.forEach(t=>{if(t.total>=promMinOrd){realIncluidas+=t.real;incluidos++;}else excluidos++;});
-    return{avg:realIncluidas/monthStats.diasLaborados,incluidos,excluidos,realIncluidas};
+    // Promedio POR TÉCNICO: órdenes realizadas / (nº técnicos × días laborados).
+    return{avg:incluidos?realIncluidas/(incluidos*monthStats.diasLaborados):0,incluidos,excluidos,realIncluidas};
   },[filtered,monthStats,promMinOrd]);
-  // Compañera: promedio diario contemplando TODOS los técnicos (sin excluir).
+  // Compañera: promedio por técnico contemplando TODOS los técnicos (sin excluir).
   const promDiarioTodos=useMemo(()=>{
     if(!filtered.length||!monthStats.diasLaborados)return null;
     const tecs=new Set();let real=0;
     filtered.forEach(r=>{const k=normalizeName(r.tecnico);if(!k||k==="sin asignar")return;tecs.add(k);if(r.estatus==="Realizado")real++;});
-    return{avg:real/monthStats.diasLaborados,tecnicos:tecs.size};
+    return{avg:tecs.size?real/(tecs.size*monthStats.diasLaborados):0,tecnicos:tecs.size};
   },[filtered,monthStats]);
   // SLA de atención: Instalaciones 72 h (3 días), Tickets 48 h (2 días). Meta: ≥95% dentro del plazo.
   const SLA_META_PCT=95;
@@ -2350,16 +2351,16 @@ function App(){
             {promDiarioTodos&&(
               <div className="kpi-card">
                 <div className="kpi-icon" style={{color:"var(--amber)"}}><TrendingUp size={18} strokeWidth={2}/></div>
-                <div className="kpi-label">Prom. diario — todos los técnicos</div>
-                <div className="kpi-value">{promDiarioTodos.avg.toFixed(1)}<span style={{fontSize:13,color:"var(--text-dim)",fontWeight:400}}>/día</span></div>
+                <div className="kpi-label">Prom. diario por técnico — todos</div>
+                <div className="kpi-value">{promDiarioTodos.avg.toFixed(1)}<span style={{fontSize:13,color:"var(--text-dim)",fontWeight:400}}> órd/téc·día</span></div>
                 <div className="kpi-sub">{promDiarioTodos.tecnicos} técnicos · sin excluir a nadie</div>
               </div>
             )}
             {promDiarioSinBajos&&(
               <div className="kpi-card">
                 <div className="kpi-icon" style={{color:"var(--signal)"}}><TrendingUp size={18} strokeWidth={2}/></div>
-                <div className="kpi-label">Prom. diario — órdenes realizadas</div>
-                <div className="kpi-value">{promDiarioSinBajos.avg.toFixed(1)}<span style={{fontSize:13,color:"var(--text-dim)",fontWeight:400}}>/día</span></div>
+                <div className="kpi-label">Prom. diario por técnico — núcleo</div>
+                <div className="kpi-value">{promDiarioSinBajos.avg.toFixed(1)}<span style={{fontSize:13,color:"var(--text-dim)",fontWeight:400}}> órd/téc·día</span></div>
                 <div className="kpi-sub">{promDiarioSinBajos.incluidos} técnicos · excluye {promDiarioSinBajos.excluidos} con &lt;{promMinOrd} órd</div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8}}>
                   <span style={{fontSize:10.5,color:"var(--text-dim)"}}>Mín. carga:</span>
