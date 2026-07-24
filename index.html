@@ -135,6 +135,36 @@ function pickZona(v){return v==="AMBIGUOUS"?null:v;}
 function truncPct(n,d=2){if(n==null||isNaN(n))return"—";const f=Math.pow(10,d);return(Math.floor(n*f)/f).toFixed(d);}
 function KpiCard({icon:Icon,label,value,sub,accent}){return(<div className="kpi-card"><div className="kpi-icon" style={{color:accent}}><Icon size={18} strokeWidth={2}/></div><div className="kpi-label">{label}</div><div className="kpi-value">{value}</div>{sub&&<div className="kpi-sub">{sub}</div>}</div>);}
 const KpiCardM=React.memo(KpiCard);
+// Contenido de la etiqueta (zonas producidas + contraparte) para un técnico/agente.
+function buildDetalleActivo(entry,contraLabel){
+  if(!entry)return null;
+  const zonas=[...entry.zonas.entries()].sort((a,b)=>b[1]-a[1]);
+  const contra=[...entry.contra.entries()].sort((a,b)=>b[1]-a[1]);
+  const totZ=zonas.reduce((s,[,v])=>s+v,0);
+  const fila=([n,c])=>(<div key={n} style={{display:"flex",justifyContent:"space-between",gap:14}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span><span style={{fontFamily:"'JetBrains Mono',monospace",opacity:.85}}>{c}</span></div>);
+  return(<>
+    <div style={{fontWeight:600,marginBottom:4}}>Zonas producidas ({totZ})</div>
+    {zonas.length?zonas.slice(0,6).map(fila):<div style={{opacity:.7}}>Sin realizadas</div>}
+    {zonas.length>6&&<div style={{opacity:.6,marginTop:2}}>+{zonas.length-6} zonas más</div>}
+    <div style={{fontWeight:600,margin:"8px 0 4px",borderTop:"1px solid rgba(255,255,255,.15)",paddingTop:6}}>{contraLabel}</div>
+    {contra.length?contra.slice(0,4).map(fila):<div style={{opacity:.7}}>—</div>}
+    {contra.length>4&&<div style={{opacity:.6,marginTop:2}}>+{contra.length-4} más</div>}
+  </>);
+}
+// Nombre con etiqueta flotante al pasar el mouse (portal a body: no lo recorta el card).
+function CeldaNombreHover({texto,color,detalle}){
+  const [pos,setPos]=useState(null);
+  const ref=useRef(null);
+  const show=()=>{if(ref.current){const r=ref.current.getBoundingClientRect();setPos({left:Math.min(r.left,window.innerWidth-280),top:r.bottom+6});}};
+  const hide=()=>setPos(null);
+  return(<>
+    <span ref={ref} onMouseEnter={show} onMouseLeave={hide} style={{color,fontWeight:500,cursor:"help",borderBottom:"1px dotted var(--text-dim)"}}>{texto}</span>
+    {pos&&detalle&&ReactDOM.createPortal(
+      <div style={{position:"fixed",left:pos.left,top:pos.top,zIndex:9999,background:"#1E293B",color:"#fff",borderRadius:10,padding:"10px 12px",fontSize:11.5,fontFamily:"'Inter',sans-serif",boxShadow:"0 8px 28px rgba(0,0,0,.28)",width:250,lineHeight:1.5,pointerEvents:"none"}}>{detalle}</div>,
+      document.body
+    )}
+  </>);
+}
 function KpiRingCard({label,pct,sub,accent,tooltip,useSemaforo=true}){
   const r=26,c=2*Math.PI*r;
   const clamped=Math.max(0,Math.min(100,pct));
@@ -969,6 +999,34 @@ function App(){
   const nombresPerfiles=useMemo(()=>{const normalize=s=>s?s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," "):"";const seen=new Map();data.forEach(r=>{[r.tecnico,r.agente].forEach(n=>{const k=normalize(n);if(k&&k!=="sin asignar"&&!seen.has(k))seen.set(k,n.trim());});});return Array.from(seen.values()).sort((a,b)=>a.localeCompare(b));},[data]);
   const activosData=useMemo(()=>{if(activeModule!=="agentes")return{tecnicos:[],agentes:[]};const normalize=s=>s?s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," "):"";const tecnicos=new Map();const agentes=new Map();filtered.forEach(r=>{const tk=normalize(r.tecnico);if(tk&&tk!=="sin asignar"){if(!tecnicos.has(tk))tecnicos.set(tk,{name:r.tecnico.trim(),total:0,realizadas:0});const t=tecnicos.get(tk);t.total++;if(r.estatus==="Realizado")t.realizadas++;}const ak=normalize(r.agente);if(ak&&ak!=="sin asignar"){if(!agentes.has(ak))agentes.set(ak,{name:r.agente.trim(),total:0,realizadas:0});const a=agentes.get(ak);a.total++;if(r.estatus==="Realizado")a.realizadas++;}});return{tecnicos:Array.from(tecnicos.values()).sort((a,b)=>b.total-a.total),agentes:Array.from(agentes.values()).sort((a,b)=>b.total-a.total)};},[filtered,activeModule]);
   const agenteData=useMemo(()=>{if(activeModule!=="agentes")return[];const normalize=s=>s?s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," "):"";const grouped=new Map();filtered.forEach(r=>{const key=normalize(r.agente);if(!key||key==="sin asignar")return;const canonical=grouped.has(key)?grouped.get(key).name:r.agente.trim();if(!grouped.has(key))grouped.set(key,{name:canonical,realizado:0,no_realizado:0});const g=grouped.get(key);if(r.estatus==="Realizado")g.realizado++;else g.no_realizado++;});return Array.from(grouped.values()).map(g=>{const total=g.realizado+g.no_realizado;return{...g,total,pct:total?Math.round((g.realizado/total)*100):0};}).sort((a,b)=>b.pct-a.pct);},[filtered,activeModule]);
+  // Detalle por t\u00e9cnico/agente para la etiqueta al pasar el mouse en el nombre:
+  // zonas donde ha producido (realizadas) + la contraparte (agentes que lo
+  // atendieron / t\u00e9cnicos que atendi\u00f3), con la cantidad de \u00f3rdenes.
+  const activosDetalle=useMemo(()=>{
+    const tec=new Map(),ag=new Map();
+    if(activeModule!=="agentes")return{tec,ag};
+    const inc=(map,k)=>map.set(k,(map.get(k)||0)+1);
+    filtered.forEach(r=>{
+      const realizado=r.estatus==="Realizado";
+      const zona=(r.zona&&r.zona.trim())||"Sin zona";
+      const tk=normalizeName(r.tecnico), ak=normalizeName(r.agente);
+      const agN=(r.agente&&r.agente.trim())||"";
+      const tecN=(r.tecnico&&r.tecnico.trim())||"";
+      if(tk&&tk!=="sin asignar"){
+        if(!tec.has(tk))tec.set(tk,{zonas:new Map(),contra:new Map()});
+        const d=tec.get(tk);
+        if(realizado)inc(d.zonas,zona);
+        if(agN&&ak!=="sin asignar")inc(d.contra,agN);
+      }
+      if(ak&&ak!=="sin asignar"){
+        if(!ag.has(ak))ag.set(ak,{zonas:new Map(),contra:new Map()});
+        const d=ag.get(ak);
+        if(realizado)inc(d.zonas,zona);
+        if(tecN&&tk!=="sin asignar")inc(d.contra,tecN);
+      }
+    });
+    return{tec,ag};
+  },[filtered,activeModule]);
   if(authLoading)return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#F8FAFC",gap:10,color:"#64748B",fontFamily:"'JetBrains Mono',monospace",fontSize:13}}><Loader2 size={18} className="spin"/> Verificando sesión…</div>);
   if(isRecovery)return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#F8FAFC"}}>
@@ -2166,7 +2224,7 @@ function App(){
                 </div>
                 <table className="activos-table">
                   <thead><tr><th></th><th>Técnico</th><th>Órdenes</th><th>Realizadas</th><th>%</th></tr></thead>
-                  <tbody>{activosData.tecnicos.map((t,i)=>{const pct=t.total?Math.round((t.realizadas/t.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(t.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={t.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#EAF0F7",color:"#2563EB",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.name.trim().charAt(0).toUpperCase()}</div>}</td><td style={{color,fontWeight:500}}>{t.name}</td><td>{t.total}</td><td>{t.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td></tr>);})}</tbody>
+                  <tbody>{activosData.tecnicos.map((t,i)=>{const pct=t.total?Math.round((t.realizadas/t.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(t.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={t.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#EAF0F7",color:"#2563EB",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.name.trim().charAt(0).toUpperCase()}</div>}</td><td><CeldaNombreHover texto={t.name} color={color} detalle={buildDetalleActivo(activosDetalle.tec.get(normalizeName(t.name)),"Agentes que lo atendieron")}/></td><td>{t.total}</td><td>{t.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td></tr>);})}</tbody>
                 </table>
               </div>
               <div className="activos-card">
@@ -2176,7 +2234,7 @@ function App(){
                 </div>
                 <table className="activos-table">
                   <thead><tr><th></th><th>Agente</th><th>Órdenes</th><th>Realizadas</th><th>%</th></tr></thead>
-                  <tbody>{activosData.agentes.map((a,i)=>{const pct=a.total?Math.round((a.realizadas/a.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(a.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={a.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#FEF1E6",color:"#EA580C",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{a.name.trim().charAt(0).toUpperCase()}</div>}</td><td style={{color,fontWeight:500}}>{a.name}</td><td>{a.total}</td><td>{a.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td></tr>);})}</tbody>
+                  <tbody>{activosData.agentes.map((a,i)=>{const pct=a.total?Math.round((a.realizadas/a.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(a.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={a.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#FEF1E6",color:"#EA580C",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{a.name.trim().charAt(0).toUpperCase()}</div>}</td><td><CeldaNombreHover texto={a.name} color={color} detalle={buildDetalleActivo(activosDetalle.ag.get(normalizeName(a.name)),"Técnicos que atendió")}/></td><td>{a.total}</td><td>{a.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td></tr>);})}</tbody>
                 </table>
               </div>
             </div>
