@@ -141,8 +141,10 @@ function buildDetalleActivo(entry,contraLabel){
   const zonas=[...entry.zonas.entries()].sort((a,b)=>b[1]-a[1]);
   const contra=[...entry.contra.entries()].sort((a,b)=>b[1]-a[1]);
   const totZ=zonas.reduce((s,[,v])=>s+v,0);
+  const dias=entry.dias?entry.dias.size:0;
   const fila=([n,c])=>(<div key={n} style={{display:"flex",justifyContent:"space-between",gap:14}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span><span style={{fontFamily:"'JetBrains Mono',monospace",opacity:.85}}>{c}</span></div>);
   return(<>
+    <div style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:6}}><span style={{opacity:.85}}>Días con orden cerrada</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"#F2780C"}}>{dias}</span></div>
     <div style={{fontWeight:600,marginBottom:4}}>Zonas producidas ({totZ})</div>
     {zonas.length?zonas.slice(0,6).map(fila):<div style={{opacity:.7}}>Sin realizadas</div>}
     {zonas.length>6&&<div style={{opacity:.6,marginTop:2}}>+{zonas.length-6} zonas más</div>}
@@ -1013,15 +1015,15 @@ function App(){
       const agN=(r.agente&&r.agente.trim())||"";
       const tecN=(r.tecnico&&r.tecnico.trim())||"";
       if(tk&&tk!=="sin asignar"){
-        if(!tec.has(tk))tec.set(tk,{zonas:new Map(),contra:new Map()});
+        if(!tec.has(tk))tec.set(tk,{zonas:new Map(),contra:new Map(),dias:new Set()});
         const d=tec.get(tk);
-        if(realizado)inc(d.zonas,zona);
+        if(realizado){inc(d.zonas,zona);d.dias.add(r.fecha);}
         if(agN&&ak!=="sin asignar")inc(d.contra,agN);
       }
       if(ak&&ak!=="sin asignar"){
-        if(!ag.has(ak))ag.set(ak,{zonas:new Map(),contra:new Map()});
+        if(!ag.has(ak))ag.set(ak,{zonas:new Map(),contra:new Map(),dias:new Set()});
         const d=ag.get(ak);
-        if(realizado)inc(d.zonas,zona);
+        if(realizado){inc(d.zonas,zona);d.dias.add(r.fecha);}
         if(tecN&&tk!=="sin asignar")inc(d.contra,tecN);
       }
     });
