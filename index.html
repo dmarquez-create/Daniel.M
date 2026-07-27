@@ -188,7 +188,9 @@ function buildVisitasDetalle(visitas){
         <span style={{color:v.estatus==="Realizado"?"#22C55E":"#F2780C",fontWeight:600}}>{v.estatus}</span>
       </div>
       {v.tecnico&&v.tecnico!=="Sin asignar"&&<div style={{opacity:.7,fontSize:10.5}}>Téc: {v.tecnico}</div>}
-      {(v.motivo||v.imp)&&<div style={{opacity:.9,fontSize:10.5}}>{v.motivo||v.imp}</div>}
+      {v.motivo&&<div style={{opacity:.9,fontSize:10.5}}>{v.motivo}</div>}
+      {v.motivo&&/imposibilidad/i.test(v.motivo)&&v.imp&&<div style={{opacity:.75,fontSize:10.5,paddingLeft:8}}>↳ {v.imp}</div>}
+      {!v.motivo&&v.imp&&<div style={{opacity:.9,fontSize:10.5}}>{v.imp}</div>}
     </div>))}
     {visitas.length>5&&<div style={{opacity:.6}}>+{visitas.length-5} visitas más</div>}
   </>);
