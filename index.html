@@ -176,6 +176,23 @@ function buildDetalleActivo(entry,contraLabel,zonaBase){
     {contra.length>4&&<div style={{opacity:.6,marginTop:2}}>+{contra.length-4} más</div>}
   </>);
 }
+// Contenido de la etiqueta de visitas (cruce con el Excel de BD Agenda).
+function buildVisitasDetalle(visitas){
+  if(!visitas||!visitas.length)return null;
+  const fmt=f=>f?new Date(f+"T00:00:00").toLocaleDateString("es-MX"):"-";
+  return(<>
+    <div style={{fontWeight:600,marginBottom:5}}>Visitas en agenda ({visitas.length})</div>
+    {visitas.slice(0,5).map((v,i)=>(<div key={i} style={{marginBottom:5}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",opacity:.8}}>{fmt(v.fecha)}</span>
+        <span style={{color:v.estatus==="Realizado"?"#22C55E":"#F2780C",fontWeight:600}}>{v.estatus}</span>
+      </div>
+      {v.tecnico&&v.tecnico!=="Sin asignar"&&<div style={{opacity:.7,fontSize:10.5}}>Téc: {v.tecnico}</div>}
+      {(v.motivo||v.imp)&&<div style={{opacity:.9,fontSize:10.5}}>{v.motivo||v.imp}</div>}
+    </div>))}
+    {visitas.length>5&&<div style={{opacity:.6}}>+{visitas.length-5} visitas más</div>}
+  </>);
+}
 // Nombre con etiqueta flotante al pasar el mouse (portal a body: no lo recorta el card).
 function CeldaNombreHover({texto,color,detalle}){
   const [pos,setPos]=useState(null);
@@ -557,6 +574,22 @@ function App(){
     return mwTicketsData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.motivo_asunto||"").toLowerCase().includes(q))&&(!mwMotivoFilter||mwNormMotivo(r.motivo_asunto)===mwMotivoFilter)&&(!mwTicketEstadoFilter||(mwTicketEstadoFilter==="cerrado"?r.estado==="cerrado":r.estado!=="cerrado"))&&(!mwTicketZonaFilter||r.zona===mwTicketZonaFilter));
   },[mwTicketsData,mwSearch,mwMotivoFilter,mwTicketEstadoFilter,mwTicketZonaFilter]);
   useEffect(()=>{setMwInstPage(1);},[mwInstRows]);
+  // Cruce con el Excel de BD Agenda: instalaciones pendientes de MikroWisp que
+  // ya tuvieron visita (hay órdenes de Instalación en la agenda para ese id de
+  // cliente). Llave: ordenes.id_cliente == MikroWisp instalaciones.id (mismo
+  // espacio de IDs, verificado). Devuelve Map id -> visitas ordenadas por fecha.
+  const visitasAgendaPorId=useMemo(()=>{
+    const m=new Map();
+    if(activeModule!=="mw_instalaciones")return m;
+    data.forEach(r=>{
+      if(r.tipo!=="Instalación"||r.id_cliente==null)return;
+      const k=String(r.id_cliente).trim();
+      if(!m.has(k))m.set(k,[]);
+      m.get(k).push({fecha:r.fecha,estatus:r.estatus,motivo:r.motivo,imp:r.motivo_imposibilidad,tecnico:r.tecnico});
+    });
+    m.forEach(v=>v.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")));
+    return m;
+  },[data,activeModule]);
   useEffect(()=>{setMwTicketsPage(1);},[mwTicketsRows]);
   useEffect(()=>{setMwResumenPage(1);},[mwTicketsResumenAbiertos]);
   const asigActivasSet=useMemo(()=>new Set(asigList.filter(a=>!ESTADOS_TERMINALES.has(a.estatus)).map(a=>`${a.tipo}|${a.orden_id}`)),[asigList,ESTADOS_TERMINALES]);
@@ -1877,7 +1910,7 @@ function App(){
                     <tbody>{pageRows.map(r=>(
                       <tr key={r.id}>
                         <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{r.id}</td>
-                        <td style={{fontWeight:500}}>{r.nombre}</td>
+                        <td style={{fontWeight:500}}>{(()=>{const vis=visitasAgendaPorId.get(String(r.id));return vis&&vis.length?(<span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><CeldaNombreHover texto={r.nombre} color="var(--text)" detalle={buildVisitasDetalle(vis)}/><span title="Ya tuvo visita registrada en la agenda" style={{background:"var(--signal-soft)",color:"var(--signal)",borderRadius:4,padding:"1px 5px",fontSize:9.5,fontWeight:700,whiteSpace:"nowrap"}}>✓ visita</span></span>):r.nombre;})()}</td>
                         <td style={{fontSize:12,color:"var(--text-muted)"}}>{r.direccion_principal}</td>
                         <td style={{fontSize:12}}>{r.zona}</td>
                         <td><span style={{background:estadoColor[r.instalado]||"#8997AB",color:"#fff",borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:600}}>{r.instalado}</span></td>
