@@ -136,7 +136,29 @@ function truncPct(n,d=2){if(n==null||isNaN(n))return"—";const f=Math.pow(10,d)
 function KpiCard({icon:Icon,label,value,sub,accent}){return(<div className="kpi-card"><div className="kpi-icon" style={{color:accent}}><Icon size={18} strokeWidth={2}/></div><div className="kpi-label">{label}</div><div className="kpi-value">{value}</div>{sub&&<div className="kpi-sub">{sub}</div>}</div>);}
 const KpiCardM=React.memo(KpiCard);
 // Contenido de la etiqueta (zonas producidas + contraparte) para un técnico/agente.
-function buildDetalleActivo(entry,contraLabel){
+// Zona base de cada técnico (listado del negocio). Clave por nombre
+// normalizado; se incluyen nombre corto (como aparece en los datos) y nombre
+// completo por si cambiara. Técnicos fuera del listado no muestran zona base.
+const ZONA_BASE_TECNICO=(()=>{
+  const m={};
+  [
+    ["Manuel Rivera","Basaseachi"],["Jose Manuel Rivera Lozano","Basaseachi"],
+    ["Gerardo Amparan","Camargo"],["Gerardo Antonio Amparan Medina","Camargo"],
+    ["Ethel Perea","Chihuahua"],["Ethel Perea Peña","Chihuahua"],
+    ["Gabriel Urita","Chihuahua"],["Gabriel Urita Dominguez","Chihuahua"],
+    ["Said Jaimes","Chihuahua"],["Said Rafael Jaimes Caporal","Chihuahua"],
+    ["Alfredo Loya","Chihuahua"],
+    ["Eduardo Sanchez","Jimenez"],["Miguel Eduardo Sanchez Villa","Jimenez"],
+    ["Yair Jaquez","Jimenez"],["Yair Javier Jaquez Garcia","Jimenez"],
+    ["Dany Gerardo Ortiz","Juarez"],
+    ["Daniel Ruiz","Quimicas"],["Daniel Ruiz Bonilla","Quimicas"],
+    ["Efren Abud","Saucillo"],["Efren Guadalupe Abud Nuñez","Saucillo"],
+    ["Luis Alberto Caro","Valle Allende"],["Luis Alberto Caro Ramirez","Valle Allende"],
+    ["Edgar Gonzalez","Zona 7"],["Edgar Ignacio Gonzalez Gonzalez","Zona 7"],
+  ].forEach(([n,z])=>{m[normalizeName(n)]=z;});
+  return m;
+})();
+function buildDetalleActivo(entry,contraLabel,zonaBase){
   if(!entry)return null;
   const zonas=[...entry.zonas.entries()].sort((a,b)=>b[1]-a[1]);
   const contra=[...entry.contra.entries()].sort((a,b)=>b[1]-a[1]);
@@ -144,6 +166,7 @@ function buildDetalleActivo(entry,contraLabel){
   const dias=entry.dias?entry.dias.size:0;
   const fila=([n,c])=>(<div key={n} style={{display:"flex",justifyContent:"space-between",gap:14}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span><span style={{fontFamily:"'JetBrains Mono',monospace",opacity:.85}}>{c}</span></div>);
   return(<>
+    {zonaBase&&<div style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:6,paddingBottom:6,borderBottom:"1px solid rgba(255,255,255,.15)"}}><span style={{opacity:.85}}>Zona base</span><span style={{fontWeight:600,color:"#F2780C"}}>{zonaBase}</span></div>}
     <div style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:6}}><span style={{opacity:.85}}>Días con orden cerrada</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"#F2780C"}}>{dias}</span></div>
     <div style={{fontWeight:600,marginBottom:4}}>Zonas producidas ({totZ})</div>
     {zonas.length?zonas.slice(0,6).map(fila):<div style={{opacity:.7}}>Sin realizadas</div>}
@@ -2226,7 +2249,7 @@ function App(){
                 </div>
                 <table className="activos-table">
                   <thead><tr><th></th><th>Técnico</th><th>Órdenes</th><th>Realizadas</th><th>%</th></tr></thead>
-                  <tbody>{activosData.tecnicos.map((t,i)=>{const pct=t.total?Math.round((t.realizadas/t.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(t.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={t.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#EAF0F7",color:"#2563EB",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.name.trim().charAt(0).toUpperCase()}</div>}</td><td><CeldaNombreHover texto={t.name} color={color} detalle={buildDetalleActivo(activosDetalle.tec.get(normalizeName(t.name)),"Agentes que lo atendieron")}/></td><td>{t.total}</td><td>{t.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td></tr>);})}</tbody>
+                  <tbody>{activosData.tecnicos.map((t,i)=>{const pct=t.total?Math.round((t.realizadas/t.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(t.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={t.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#EAF0F7",color:"#2563EB",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.name.trim().charAt(0).toUpperCase()}</div>}</td><td><CeldaNombreHover texto={t.name} color={color} detalle={buildDetalleActivo(activosDetalle.tec.get(normalizeName(t.name)),"Agentes que lo atendieron",ZONA_BASE_TECNICO[normalizeName(t.name)])}/></td><td>{t.total}</td><td>{t.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td></tr>);})}</tbody>
                 </table>
               </div>
               <div className="activos-card">
