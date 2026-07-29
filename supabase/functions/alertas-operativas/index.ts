@@ -116,7 +116,7 @@ function buildCard(agente: string, d: AgenteBucket, fechaLabel: string): object 
   const ticketWidgets = d.tickets.slice(0, MAX).map((t) => ({
     keyValue: {
       topLabel: `${t.cliente} · ${t.zona}`,
-      content: `🎫 ${t.dias} días · ${t.motivo || "Sin motivo"}`,
+      content: `🎫 #${t.id} · ${t.dias} días · ${t.motivo || "Sin motivo"}`,
       icon: "CLOCK",
     },
   }));
@@ -129,7 +129,7 @@ function buildCard(agente: string, d: AgenteBucket, fechaLabel: string): object 
   const instWidgets = d.inst.slice(0, MAX).map((x) => ({
     keyValue: {
       topLabel: `${x.cliente} · ${x.zona}`,
-      content: `📦 ${x.dias != null ? `${x.dias} días` : "sin fecha"} · ${x.plan || "Sin plan"}`,
+      content: `📦 #${x.id} · ${x.dias != null ? `${x.dias} días` : "sin fecha"}`,
       icon: "DESCRIPTION",
     },
   }));
