@@ -57,17 +57,38 @@ se hace dentro de la función, leyendo el header `Authorization` que manda el fr
 | `mikrowisp-datos` | MySQL directo contra MikroWisp. Módulos: `instalaciones`, `tickets`, `tickets_cerrados` | ✅ `supabase/functions/mikrowisp-datos/` |
 | `calendar-events` | Google Calendar: `list`, `crear`, `borrar`, `diagnostico` | ❌ no descargada |
 | `asignar-ordenes` | Asignación de órdenes a cuadrillas: `asignar`, `listar`, `actualizar` | ✅ `supabase/functions/asignar-ordenes/` |
-| `chat-alerts` | Alertas por webhook de Google Chat, personalizadas por agente | ✅ `supabase/functions/chat-alerts/` |
+| `chat-alerts` | Alertas por webhook de Google Chat, personalizadas por agente (resumen de KPIs) | ✅ `supabase/functions/chat-alerts/` |
+| `alertas-operativas` | Resumen OPERATIVO diario a agentes: tickets abiertos sin visita >3d + instalaciones ≤30d con anticipo sin visita, ruteado al agente principal de cada zona del mes. Cron 9AM + botón manual | ✅ `supabase/functions/alertas-operativas/` |
 | `odoo-orders` | Odoo Field Service vía JSON-RPC (`project.task` con `is_fsm=true`) | ❌ no descargada |
 | `manage-users` | Gestión de usuarios | ❌ no descargada |
 | `directory-photo` | Fotos de perfil vía Google Admin SDK | ❌ no descargada |
 
-**`chat-alerts` solo tiene webhooks para 4 "agentes" de call center** (Erika, Fernanda,
-Iris, Liz — hardcodeados en `AGENT_WEBHOOKS` dentro de la función), **no para las 13
-cuadrillas/técnicos de `CAL_CALENDARS`.** Cualquier feature que quiera notificar a un
-técnico/cuadrilla por Google Chat necesita primero conseguir esos webhooks (cada uno
-requiere que esa persona cree un espacio de Chat con webhook entrante) — no es trivial
-asumir que "ya existe el canal" solo porque `chat-alerts` ya existe.
+**Los webhooks de Google Chat viven en el secret `AGENT_WEBHOOKS_JSON`** (formato
+`{"Nombre":"https://chat.googleapis.com/..."}`), leído por `chat-alerts` y por
+`alertas-operativas`. Hoy solo hay webhooks para los "agentes" de call center (Erika,
+Fernanda, Iris, Liz, Lucero, Taiven), **no para las 13 cuadrillas/técnicos de
+`CAL_CALENDARS`.** Cualquier feature que quiera notificar a un técnico/cuadrilla por
+Google Chat necesita primero conseguir esos webhooks (cada uno requiere que esa persona
+cree un espacio de Chat con webhook entrante) — no es trivial asumir que "ya existe el
+canal" solo porque `chat-alerts` ya existe. El match nombre→webhook es case/acento-insensible.
+
+### Resumen operativo diario (`alertas-operativas`)
+
+- **Qué manda**: por agente, (1) tickets ABIERTOS sin visita con >3 días desde
+  `fecha_generado`, y (2) instalaciones PENDIENTE (anticipo pagado, sin servicio) con
+  anticipo en los últimos `INST_MAX_DIAS` (=30) días y sin visita. "Sin visita" = cruce
+  con la tabla `ordenes` (BD Agenda) por `id_cliente`: ticket → no hay orden `Ticket`
+  con fecha posterior; instalación → no hay orden `Instalación` con fecha ≥ la del anticipo.
+- **Ruteo**: al **agente principal** de la zona = el agente con más órdenes en esa zona
+  **en el mes en curso** (`ordenes`). Zonas sin principal ese mes quedan en `sinAsignar`
+  (no se envían) — se reportan en la respuesta/log.
+- **Depende de que la BD Agenda del mes en curso esté importada.** Si no hay órdenes del
+  mes, el mapa de zonas queda vacío y no se envía nada.
+- **Automático**: pg_cron `alertas-operativas-diario`, `0 16 * * *` UTC = **9:00 AM
+  Chihuahua** (UTC−7, sin DST). Ver `supabase/migrations/20260729_alertas_operativas_cron.sql`.
+  Verificar: `select * from cron.job_run_details order by start_time desc limit 5;`
+- **Manual/prueba**: botón "Enviar resumen operativo" en el módulo Agentes y Técnicos, o
+  `POST` con `{"dryRun":true}` (calcula sin enviar) / `{"agente":"Nombre"}` (solo a uno).
 
 ### Despliegue de Edge Functions
 
