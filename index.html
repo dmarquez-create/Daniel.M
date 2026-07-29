@@ -488,10 +488,26 @@ function App(){
   const [alertSending,setAlertSending]=useState(false);
   const [alertMsg,setAlertMsg]=useState(null);
   const [opsSending,setOpsSending]=useState(false);
+  // Avance del día (en vivo desde MikroWisp): tickets cerrados HOY e instalaciones
+  // realizadas HOY, por zona. Independiente del selector de mes (siempre es hoy).
+  const [avance,setAvance]=useState({tk:[],inst:[]});
+  const [avanceLoading,setAvanceLoading]=useState(false);
+  const [avanceError,setAvanceError]=useState(null);
   useEffect(()=>{if(activeModule!=="agenda")return;setCalLoading(true);setCalError(null);fetch(CALENDAR_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({year:calYear,month:calMonth})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setCalEvents(d.events||[]);}).catch(e=>setCalError(e.message)).finally(()=>setCalLoading(false));},[activeModule,calYear,calMonth,session]);
   useEffect(()=>{if(activeModule!=="odoo")return;setOdooLoading(true);setOdooError(null);fetch(ODOO_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"list_orders"})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setOdooOrders(d.orders||[]);setOdooStages(d.stages||[]);}).catch(e=>setOdooError(e.message)).finally(()=>setOdooLoading(false));},[activeModule,session]);
   useEffect(()=>{if(activeModule!=="mw_instalaciones")return;setMwInstLoading(true);setMwInstError(null);const qs=new URLSearchParams({modulo:"instalaciones"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwInstData(d.instalaciones||[]);}).catch(e=>setMwInstError(e.message)).finally(()=>setMwInstLoading(false));},[activeModule,mwDesde,mwHasta,session]);
   useEffect(()=>{if(activeModule!=="mw_tickets")return;setMwTicketsLoading(true);setMwTicketsError(null);const qs=new URLSearchParams({modulo:"tickets"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwTicketsData(d.tickets||[]);}).catch(e=>setMwTicketsError(e.message)).finally(()=>setMwTicketsLoading(false));},[activeModule,mwDesde,mwHasta,session]);
+  useEffect(()=>{if(activeModule!=="agentes")return;const hoy=new Date().toLocaleDateString("en-CA",{timeZone:"America/Chihuahua"});setAvanceLoading(true);setAvanceError(null);Promise.all([
+    fetch(`${MW_FN}?modulo=tickets_cerrados&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()),
+    fetch(`${MW_FN}?modulo=instalaciones&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json())
+  ]).then(([tc,ins])=>{if(tc.error)throw new Error(tc.error);if(ins.error)throw new Error(ins.error);setAvance({tk:tc.tickets_cerrados||[],inst:(ins.instalaciones||[]).filter(x=>x.instalado==="INSTALADO")});}).catch(e=>setAvanceError(e.message)).finally(()=>setAvanceLoading(false));},[activeModule,session]);
+  const avancePorZona=useMemo(()=>{
+    const m=new Map();
+    avance.tk.forEach(r=>{const z=r.zona||"Sin zona";if(!m.has(z))m.set(z,{zona:z,tk:0,inst:0});m.get(z).tk++;});
+    avance.inst.forEach(r=>{const z=r.zona||"Sin zona";if(!m.has(z))m.set(z,{zona:z,tk:0,inst:0});m.get(z).inst++;});
+    const rows=[...m.values()].sort((a,b)=>(b.tk+b.inst)-(a.tk+a.inst)||a.zona.localeCompare(b.zona,"es"));
+    return{rows,totTk:avance.tk.length,totInst:avance.inst.length};
+  },[avance]);
   const [asigList,setAsigList]=useState([]);
   const cargarAsignaciones=useCallback(async()=>{
     const r=await fetch(ASIG_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"listar"})});
@@ -2350,6 +2366,24 @@ function App(){
             </div>
             {alertMsg&&<div className={`${alertMsg.type==="ok"?"error-banner":"error-banner"}`} style={{background:alertMsg.type==="ok"?"rgba(26,127,75,.1)":"rgba(214,69,63,.08)",borderColor:alertMsg.type==="ok"?"#22C55E":"var(--critical)",color:alertMsg.type==="ok"?"#22C55E":"#A4332E",marginBottom:12}}>{alertMsg.text}</div>}
             <div className="pulse-line"/>
+            <div className="activos-card" style={{marginBottom:16}}>
+              <div className="activos-card-header">
+                <div className="activos-card-title">Avance del día · {new Date().toLocaleDateString("es-MX",{weekday:"long",day:"2-digit",month:"long",timeZone:"America/Chihuahua"})}</div>
+                <div className="activos-badge">🎫 {avancePorZona.totTk} · 📦 {avancePorZona.totInst}</div>
+              </div>
+              {avanceLoading?(<div style={{padding:20,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Cargando…</div>):
+               avanceError?(<div style={{padding:20,textAlign:"center",color:"var(--critical)",fontSize:13}}>Error: {avanceError}</div>):
+               avancePorZona.rows.length===0?(<div style={{padding:20,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Sin tickets cerrados ni instalaciones hoy.</div>):(
+              <div style={{overflowX:"auto"}}>
+                <table className="activos-table">
+                  <thead><tr><th>Zona</th><th style={{textAlign:"right"}}>Tickets cerrados</th><th style={{textAlign:"right"}}>Instalaciones</th></tr></thead>
+                  <tbody>
+                    {avancePorZona.rows.map((r,i)=>(<tr key={i}><td>{r.zona}</td><td style={{textAlign:"right",fontWeight:600,color:"var(--signal)"}}>{r.tk||"—"}</td><td style={{textAlign:"right",fontWeight:600,color:"var(--amber)"}}>{r.inst||"—"}</td></tr>))}
+                    <tr style={{borderTop:"2px solid var(--border)",fontWeight:700}}><td>Total</td><td style={{textAlign:"right"}}>{avancePorZona.totTk}</td><td style={{textAlign:"right"}}>{avancePorZona.totInst}</td></tr>
+                  </tbody>
+                </table>
+              </div>)}
+            </div>
             <div className="controls-row">
               <div className="toggle-group">
                 <div className="range-toggle">{MONTH_OPTIONS.map(opt=>(<button key={opt.key} className={`range-btn${month===opt.key?" active":""}`} onClick={()=>setMonth(opt.key)}>{opt.label}</button>))}</div>
