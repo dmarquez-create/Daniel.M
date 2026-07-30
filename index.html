@@ -213,9 +213,11 @@ function buildReincDetalle(list,label){
       </div>
       <div style={{opacity:.75,fontSize:10.5,display:"flex",justifyContent:"space-between",gap:12}}>
         <span>{x.zona||"Sin zona"}</span>
-        <span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(x.fecha)} → {fmt(x.ticketFecha)}</span>
+        {!x.tickets&&<span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(x.fecha)} → {fmt(x.ticketFecha)}</span>}
       </div>
-      {x.ticketMotivo&&<div title={x.ticketMotivo} style={{opacity:.9,fontSize:10.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:230}}>↳ {x.ticketMotivo}</div>}
+      {x.tickets
+        ? x.tickets.map((t,j)=>(<div key={j} title={t.motivo||""} style={{opacity:.9,fontSize:10.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:250}}><span style={{fontFamily:"'JetBrains Mono',monospace",opacity:.7}}>{j+1}° {fmt(t.fecha)}</span> · {t.motivo||"sin asunto"}</div>))
+        : (x.ticketMotivo&&<div title={x.ticketMotivo} style={{opacity:.9,fontSize:10.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:230}}>↳ {x.ticketMotivo}</div>)}
     </div>))}
     {list.length>8&&<div style={{opacity:.6}}>+{list.length-8} más</div>}
   </>);
@@ -1196,7 +1198,15 @@ function App(){
         if(fu)d.inst.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,ticketMotivo:motivoTk(cid,fu.day)});
       }else if(r.tipo==="Ticket"){
         d.tickTotal++;
-        if(fu)d.tick.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,ticketMotivo:motivoTk(cid,fu.day)});
+        if(fu){
+          // Cadena de tickets del caso: el original (1°) + los de seguimiento
+          // encadenados dentro de 30 días (2°, 3°), con el asunto de cada uno.
+          const oDay=dayNum(r.fecha)||0;
+          const chain=[{fecha:r.fecha,motivo:motivoTk(cid,oDay)}];
+          let lastDay=compDay;
+          for(const o of tks){if(o.day>lastDay&&o.day<=lastDay+30){chain.push({fecha:o.fecha,motivo:motivoTk(cid,o.day)});lastDay=o.day;if(chain.length>=3)break;}}
+          d.tick.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,tickets:chain});
+        }
       }
     });
     return res;
