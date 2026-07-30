@@ -502,6 +502,7 @@ function App(){
   const [avInst,setAvInst]=useState([]);
   const [avInstLoading,setAvInstLoading]=useState(false);
   const [avInstError,setAvInstError]=useState(null);
+  const [avInstFecha,setAvInstFecha]=useState(()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Chihuahua"}));
   useEffect(()=>{if(activeModule!=="agenda")return;setCalLoading(true);setCalError(null);fetch(CALENDAR_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({year:calYear,month:calMonth})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setCalEvents(d.events||[]);}).catch(e=>setCalError(e.message)).finally(()=>setCalLoading(false));},[activeModule,calYear,calMonth,session]);
   useEffect(()=>{if(activeModule!=="odoo")return;setOdooLoading(true);setOdooError(null);fetch(ODOO_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"list_orders"})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setOdooOrders(d.orders||[]);setOdooStages(d.stages||[]);}).catch(e=>setOdooError(e.message)).finally(()=>setOdooLoading(false));},[activeModule,session]);
   useEffect(()=>{if(activeModule!=="mw_instalaciones")return;setMwInstLoading(true);setMwInstError(null);const qs=new URLSearchParams({modulo:"instalaciones"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwInstData(d.instalaciones||[]);}).catch(e=>setMwInstError(e.message)).finally(()=>setMwInstLoading(false));},[activeModule,mwDesde,mwHasta,session]);
@@ -510,7 +511,7 @@ function App(){
     fetch(`${MW_FN}?modulo=tickets_cerrados&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()),
     fetch(`${MW_FN}?modulo=instalaciones&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json())
   ]).then(([tc,ins])=>{if(tc.error)throw new Error(tc.error);if(ins.error)throw new Error(ins.error);setAvance({tk:tc.tickets_cerrados||[],inst:(ins.instalaciones||[]).filter(x=>x.instalado==="INSTALADO")});}).catch(e=>setAvanceError(e.message)).finally(()=>setAvanceLoading(false));},[activeModule,session]);
-  useEffect(()=>{if(activeModule!=="avance")return;setAvInstLoading(true);setAvInstError(null);fetch(AVINST_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setAvInst(d.instalaciones||[]);}).catch(e=>setAvInstError(e.message)).finally(()=>setAvInstLoading(false));},[activeModule,session]);
+  useEffect(()=>{if(activeModule!=="avance")return;setAvInstLoading(true);setAvInstError(null);fetch(AVINST_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({fecha:avInstFecha})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setAvInst(d.instalaciones||[]);}).catch(e=>setAvInstError(e.message)).finally(()=>setAvInstLoading(false));},[activeModule,session,avInstFecha]);
   // Tickets de MikroWisp (con motivo_asunto e id_cliente) para enriquecer la
   // etiqueta de reincidencia con el asunto real del ticket de seguimiento.
   const [mwReincTk,setMwReincTk]=useState([]);
@@ -2415,7 +2416,10 @@ function App(){
             <div style={{marginTop:8}}>
               <div className="activos-card-header" style={{marginBottom:10}}>
                 <div className="activos-card-title">Instalaciones del día · detalle</div>
-                <div className="activos-badge">{avInst.length}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <input type="date" value={avInstFecha} max={new Date().toLocaleDateString("en-CA",{timeZone:"America/Chihuahua"})} onChange={e=>setAvInstFecha(e.target.value)} style={{padding:"5px 8px",border:"1px solid var(--border)",borderRadius:8,background:"var(--surface)",color:"var(--text)",fontSize:12,fontFamily:"'Inter',sans-serif"}}/>
+                  <div className="activos-badge">{avInst.length}</div>
+                </div>
               </div>
               {avInstLoading?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Cargando instalaciones… (consulta a MikroWisp, puede tardar unos segundos)</div>):
                avInstError?(<div style={{padding:24,textAlign:"center",color:"var(--critical)",fontSize:13}}>Error: {avInstError}</div>):
