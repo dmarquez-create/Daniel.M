@@ -1209,9 +1209,13 @@ function App(){
         if(fu){
           // Cadena de tickets del caso: el original (1°) + TODOS los de
           // seguimiento dentro de los 30 días desde que se realizó la orden.
+          // Se dedupe por fecha+asunto: la BD Agenda a veces trae la misma
+          // visita duplicada el mismo día (1 solo ticket real en MikroWisp).
           const oDay=dayNum(r.fecha)||0;
-          const chain=[{fecha:r.fecha,motivo:motivoTk(cid,oDay)}];
-          for(const o of tks){if(o.day>compDay&&o.day<=compDay+30)chain.push({fecha:o.fecha,motivo:motivoTk(cid,o.day)});}
+          const m0=motivoTk(cid,oDay);
+          const chain=[{fecha:r.fecha,motivo:m0}];
+          const vistos=new Set([`${oDay}|${m0||""}`]);
+          for(const o of tks){if(o.day>compDay&&o.day<=compDay+30){const m=motivoTk(cid,o.day);const key=`${o.day}|${m||""}`;if(vistos.has(key))continue;vistos.add(key);chain.push({fecha:o.fecha,motivo:m});}}
           d.tick.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,tickets:chain});
         }
       }
