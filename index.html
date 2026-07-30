@@ -1199,12 +1199,11 @@ function App(){
       }else if(r.tipo==="Ticket"){
         d.tickTotal++;
         if(fu){
-          // Cadena de tickets del caso: el original (1°) + los de seguimiento
-          // encadenados dentro de 30 días (2°, 3°), con el asunto de cada uno.
+          // Cadena de tickets del caso: el original (1°) + TODOS los de
+          // seguimiento dentro de los 30 días desde que se realizó la orden.
           const oDay=dayNum(r.fecha)||0;
           const chain=[{fecha:r.fecha,motivo:motivoTk(cid,oDay)}];
-          let lastDay=compDay;
-          for(const o of tks){if(o.day>lastDay&&o.day<=lastDay+30){chain.push({fecha:o.fecha,motivo:motivoTk(cid,o.day)});lastDay=o.day;if(chain.length>=3)break;}}
+          for(const o of tks){if(o.day>compDay&&o.day<=compDay+30)chain.push({fecha:o.fecha,motivo:motivoTk(cid,o.day)});}
           d.tick.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,tickets:chain});
         }
       }
