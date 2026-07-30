@@ -52,6 +52,10 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 // N días (evita repartir todo el backlog histórico de anticipos abandonados).
 const INST_MAX_DIAS = 30;
 
+// Recordatorio de servicio que acompaña cada alerta a los agentes.
+const MENSAJE_SERVICIO =
+  "Atender y dar solución a cada cliente es nuestra prioridad. Demos seguimiento a estos pendientes y mantengamos siempre informado al cliente del estatus de su servicio — la buena comunicación marca la diferencia. 💪";
+
 // Webhooks por agente (mismo secret que chat-alerts). Ver chat-alerts/index.ts.
 function loadAgentWebhooks(): Record<string, string> {
   const raw = Deno.env.get("AGENT_WEBHOOKS_JSON");
@@ -137,6 +141,10 @@ function buildCard(agente: string, d: AgenteBucket, fechaLabel: string): object 
   secciones.push({
     header: `🟠 Instalaciones con anticipo sin visita (${d.inst.length})`,
     widgets: instWidgets.length ? instWidgets : [{ textParagraph: { text: "Sin pendientes 🎉" } }],
+  });
+
+  secciones.push({
+    widgets: [{ textParagraph: { text: `<b>📣 Recordatorio de servicio</b><br>${MENSAJE_SERVICIO}` } }],
   });
 
   secciones.push({
