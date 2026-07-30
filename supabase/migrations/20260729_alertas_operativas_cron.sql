@@ -26,7 +26,8 @@ select cron.schedule(
   select net.http_post(
     url     := 'https://alisslhkyxblpvwzutcx.supabase.co/functions/v1/alertas-operativas',
     headers := jsonb_build_object('Content-Type', 'application/json'),
-    body    := '{}'::jsonb
+    body    := '{}'::jsonb,
+    timeout_milliseconds := 60000  -- la función tarda ~10-15s (trae y procesa MikroWisp); el default de 5s la cortaba
   );
   $$
 );
