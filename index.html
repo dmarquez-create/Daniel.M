@@ -508,6 +508,7 @@ function App(){
   // Tickets de MikroWisp (con motivo_asunto e id_cliente) para enriquecer la
   // etiqueta de reincidencia con el asunto real del ticket de seguimiento.
   const [mwReincTk,setMwReincTk]=useState([]);
+  const [reincModal,setReincModal]=useState(null);
   useEffect(()=>{if(activeModule!=="agentes")return;fetch(`${MW_FN}?modulo=tickets&desde=2026-04-01`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(!d.error)setMwReincTk(d.tickets||[]);}).catch(()=>{});},[activeModule,session]);
   const mwTicketMotivoIdx=useMemo(()=>{
     const m=new Map();
@@ -2450,10 +2451,38 @@ function App(){
                 <div style={{overflowX:"auto"}}>
                 <table className="activos-table">
                   <thead><tr><th></th><th>Técnico</th><th>Órdenes</th><th>Realizadas</th><th>%</th><th title="Instalaciones que generaron un ticket dentro de 30 días de realizadas, y tickets que generaron otro ticket dentro de 30 días. Semáforo — verde: cumple objetivo; ámbar: hasta 2 pts sobre; rojo: se pasa. Objetivo Inst ≤3%, Tk ≤4%">Reincidencia 30d</th></tr></thead>
-                  <tbody>{activosData.tecnicos.map((t,i)=>{const pct=t.total?Math.round((t.realizadas/t.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(t.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={t.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#EAF0F7",color:"#2563EB",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.name.trim().charAt(0).toUpperCase()}</div>}</td><td><CeldaNombreHover texto={t.name} color={color} detalle={buildDetalleActivo(activosDetalle.tec.get(normalizeName(t.name)),"Agentes que lo atendieron",ZONA_BASE_TECNICO[normalizeName(t.name)])}/></td><td>{t.total}</td><td>{t.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td><td style={{fontSize:11,whiteSpace:"nowrap"}}>{(()=>{const rc=reincidenciaTec.get(normalizeName(t.name));if(!rc)return <span style={{color:"var(--text-dim)"}}>—</span>;const iN=rc.inst.length,iP=rc.instTotal?Math.round(iN/rc.instTotal*100):0;const tN=rc.tick.length,tP=rc.tickTotal?Math.round(tN/rc.tickTotal*100):0;const linea=(pre,n,p,list,label,meta)=>{const col=reincColor(p,meta);const dot=<span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:col,marginRight:5,verticalAlign:"middle"}}/>;return list.length?(<span>{dot}<CeldaNombreHover texto={`${pre} ${n} · ${p}%`} color={col} detalle={buildReincDetalle(list,label)}/></span>):(<span style={{color:col,fontWeight:600}}>{dot}{`${pre} ${n} · ${p}%`}</span>);};return(<div style={{display:"flex",flexDirection:"column",gap:2}}><div>{linea("Inst",iN,iP,rc.inst,"Instalaciones con ticket ≤30d · objetivo <3%",3)}</div><div>{linea("Tk",tN,tP,rc.tick,"Tickets con otro ticket ≤30d · objetivo ≤4%",4)}</div></div>);})()}</td></tr>);})}</tbody>
+                  <tbody>{activosData.tecnicos.map((t,i)=>{const pct=t.total?Math.round((t.realizadas/t.total)*100):0;const color=semaforoColor(pct);const foto=perfiles[normalizeName(t.name)]?.foto_url;return(<tr key={i}><td>{foto?<img src={foto} alt={t.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",display:"block"}}/>:<div style={{width:26,height:26,borderRadius:"50%",background:"#EAF0F7",color:"#2563EB",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{t.name.trim().charAt(0).toUpperCase()}</div>}</td><td><CeldaNombreHover texto={t.name} color={color} detalle={buildDetalleActivo(activosDetalle.tec.get(normalizeName(t.name)),"Agentes que lo atendieron",ZONA_BASE_TECNICO[normalizeName(t.name)])}/></td><td>{t.total}</td><td>{t.realizadas}</td><td className="activos-pct" style={{color,fontWeight:600}}>{pct}%</td><td style={{fontSize:11,whiteSpace:"nowrap"}}>{(()=>{const rc=reincidenciaTec.get(normalizeName(t.name));if(!rc)return <span style={{color:"var(--text-dim)"}}>—</span>;const iN=rc.inst.length,iP=rc.instTotal?Math.round(iN/rc.instTotal*100):0;const tN=rc.tick.length,tP=rc.tickTotal?Math.round(tN/rc.tickTotal*100):0;const linea=(pre,n,p,list,label,meta)=>{const col=reincColor(p,meta);const dot=<span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:col,marginRight:5,verticalAlign:"middle"}}/>;return list.length?(<span>{dot}<CeldaNombreHover texto={`${pre} ${n} · ${p}%`} color={col} detalle={buildReincDetalle(list,label)}/></span>):(<span style={{color:col,fontWeight:600}}>{dot}{`${pre} ${n} · ${p}%`}</span>);};return(<div style={{display:"flex",alignItems:"center",gap:6}}><div style={{display:"flex",flexDirection:"column",gap:2}}><div>{linea("Inst",iN,iP,rc.inst,"Instalaciones con ticket ≤30d · objetivo <3%",3)}</div><div>{linea("Tk",tN,tP,rc.tick,"Tickets con otro ticket ≤30d · objetivo ≤4%",4)}</div></div>{(iN>0||tN>0)&&<button onClick={()=>setReincModal(t.name)} title="Ver todo el detalle" style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:"3px 5px",cursor:"pointer",color:"var(--text-muted)",display:"flex",alignItems:"center"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>}</div>);})()}</td></tr>);})}</tbody>
                 </table>
                 </div>
               </div>
+              {reincModal&&(()=>{
+                const rc=reincidenciaTec.get(normalizeName(reincModal));
+                if(!rc)return null;
+                const fmt=f=>f?new Date(f+"T00:00:00").toLocaleDateString("es-MX"):"-";
+                const iN=rc.inst.length,iP=rc.instTotal?Math.round(iN/rc.instTotal*100):0;
+                const tN=rc.tick.length,tP=rc.tickTotal?Math.round(tN/rc.tickTotal*100):0;
+                const seccion=(titulo,list,color,isTk)=>(<div style={{marginBottom:18}}>
+                  <div style={{fontWeight:700,marginBottom:8,color}}>{titulo}</div>
+                  {list.length===0?<div style={{color:"var(--text-dim)",fontSize:12}}>Sin casos.</div>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {list.map((x,i)=>(<div key={i} style={{border:"1px solid var(--border)",borderRadius:8,padding:"8px 10px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,fontWeight:600}}><span>{x.cliente||("Cliente "+x.id)}</span><span style={{fontFamily:"'JetBrains Mono',monospace",color:"var(--text-dim)"}}>{x.id||"-"}</span></div>
+                      <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:4}}>{x.zona||"Sin zona"} · realizada {fmt(x.fecha)}</div>
+                      {isTk?(x.tickets||[]).map((t,j)=>(<div key={j} style={{fontSize:11.5}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"var(--text-dim)"}}>{j+1}° {fmt(t.fecha)}</span> · {t.motivo||"sin asunto"}</div>)):<div style={{fontSize:11.5}}>↳ ticket {fmt(x.ticketFecha)} · {x.ticketMotivo||"sin asunto"}</div>}
+                    </div>))}
+                  </div>}
+                </div>);
+                return(<div className="cal-modal" onClick={e=>{if(e.target===e.currentTarget)setReincModal(null);}}>
+                  <div className="cal-modal-box" style={{background:"var(--surface)",maxWidth:560}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                      <div className="cal-modal-title" style={{marginBottom:0}}>Reincidencia 30d · {reincModal}</div>
+                      <button onClick={()=>setReincModal(null)} style={{background:"none",border:"none",fontSize:22,lineHeight:1,cursor:"pointer",color:"var(--text-dim)"}}>×</button>
+                    </div>
+                    <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:16}}>Instalaciones {iN}/{rc.instTotal} ({iP}%) · Tickets {tN}/{rc.tickTotal} ({tP}%)</div>
+                    {seccion(`Instalaciones con ticket ≤30d (${iN})`,rc.inst,"var(--signal)",false)}
+                    {seccion(`Tickets con otro ticket ≤30d (${tN})`,rc.tick,"var(--amber)",true)}
+                  </div>
+                </div>);
+              })()}
               <div className="activos-card">
                 <div className="activos-card-header">
                   <div className="activos-card-title">Agentes activos</div>
