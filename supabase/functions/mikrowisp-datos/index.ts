@@ -362,12 +362,14 @@ Deno.serve(async (req) => {
     const query = `
       SELECT
         s.id AS id,
+        s.idcliente AS id_cliente,
         u.nombre AS nombre,
         s.fecha_soporte AS fecha_generado,
         s.fecha_cerrado AS fecha_cierre,
         s.estado,
         z.zona AS zona,
         COALESCE(NULLIF(s.motivo_cierre, ''), s.asunto) AS motivo_asunto,
+        s.asunto AS asunto,
         COALESCE(NULLIF(u.telefono, ''), u.movil) AS telefono,
         u.direccion_principal AS direccion,
         u.coordenadas_venta AS coordenadas
@@ -383,12 +385,14 @@ Deno.serve(async (req) => {
 
     const tickets = (rows as Record<string, unknown>[]).map((r) => ({
       id: r.id,
+      id_cliente: r.id_cliente,
       nombre: r.nombre,
       fecha_generado: r.fecha_generado,
       fecha_cierre: r.estado === "cerrado" ? r.fecha_cierre : null,
       estado: r.estado, // abierto | cerrado | respondido | respuesta cliente
       zona: r.zona ?? "Sin zona",
       motivo_asunto: r.motivo_asunto || null,
+      asunto: r.asunto || null,
       telefono: r.telefono || null,
       direccion: r.direccion || null,
       coordenadas: r.coordenadas || null,

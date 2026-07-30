@@ -215,6 +215,7 @@ function buildReincDetalle(list,label){
         <span>{x.zona||"Sin zona"}</span>
         <span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(x.fecha)} → {fmt(x.ticketFecha)}</span>
       </div>
+      {x.ticketMotivo&&<div title={x.ticketMotivo} style={{opacity:.9,fontSize:10.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:230}}>↳ {x.ticketMotivo}</div>}
     </div>))}
     {list.length>8&&<div style={{opacity:.6}}>+{list.length-8} más</div>}
   </>);
@@ -502,6 +503,16 @@ function App(){
     fetch(`${MW_FN}?modulo=tickets_cerrados&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()),
     fetch(`${MW_FN}?modulo=instalaciones&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json())
   ]).then(([tc,ins])=>{if(tc.error)throw new Error(tc.error);if(ins.error)throw new Error(ins.error);setAvance({tk:tc.tickets_cerrados||[],inst:(ins.instalaciones||[]).filter(x=>x.instalado==="INSTALADO")});}).catch(e=>setAvanceError(e.message)).finally(()=>setAvanceLoading(false));},[activeModule,session]);
+  // Tickets de MikroWisp (con motivo_asunto e id_cliente) para enriquecer la
+  // etiqueta de reincidencia con el asunto real del ticket de seguimiento.
+  const [mwReincTk,setMwReincTk]=useState([]);
+  useEffect(()=>{if(activeModule!=="agentes")return;fetch(`${MW_FN}?modulo=tickets&desde=2026-04-01`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(!d.error)setMwReincTk(d.tickets||[]);}).catch(()=>{});},[activeModule,session]);
+  const mwTicketMotivoIdx=useMemo(()=>{
+    const m=new Map();
+    if(activeModule!=="agentes")return m;
+    mwReincTk.forEach(t=>{const k=String(t.id_cliente??"").trim();if(!k)return;const day=dayNum(t.fecha_generado);if(day==null)return;if(!m.has(k))m.set(k,[]);m.get(k).push({day,motivo:t.asunto||t.motivo_asunto});});
+    return m;
+  },[mwReincTk,activeModule]);
   const avancePorZona=useMemo(()=>{
     const m=new Map();
     avance.tk.forEach(r=>{const z=r.zona||"Sin zona";if(!m.has(z))m.set(z,{zona:z,tk:0,inst:0});m.get(z).tk++;});
@@ -1168,6 +1179,9 @@ function App(){
     const res=new Map();
     if(activeModule!=="agentes")return res;
     const get=k=>{if(!res.has(k))res.set(k,{instTotal:0,tickTotal:0,inst:[],tick:[]});return res.get(k);};
+    // Asunto real del ticket de seguimiento: se cruza con MikroWisp por cliente y
+    // la fecha_generado más cercana a la del ticket de la BD Agenda (tolerancia ±14 días).
+    const motivoTk=(cid,day)=>{const arr=cid?mwTicketMotivoIdx.get(cid):null;if(!arr||!arr.length)return null;let best=null,bd=1e9;for(const e of arr){const dd=Math.abs(e.day-day);if(dd<bd){bd=dd;best=e;}}return(best&&bd<=14)?best.motivo:null;};
     filtered.forEach(r=>{
       if(r.estatus!=="Realizado")return;
       const tk=normalizeName(r.tecnico);
@@ -1179,14 +1193,14 @@ function App(){
       const fu=tks?tks.find(o=>o.day>compDay&&o.day<=compDay+30):null;
       if(r.tipo==="Instalación"){
         d.instTotal++;
-        if(fu)d.inst.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha});
+        if(fu)d.inst.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,ticketMotivo:motivoTk(cid,fu.day)});
       }else if(r.tipo==="Ticket"){
         d.tickTotal++;
-        if(fu)d.tick.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha});
+        if(fu)d.tick.push({cliente:r.cliente,id:cid,zona:r.zona,fecha:r.fecha,ticketFecha:fu.fecha,ticketMotivo:motivoTk(cid,fu.day)});
       }
     });
     return res;
-  },[filtered,ticketsPorClienteIdx,activeModule]);
+  },[filtered,ticketsPorClienteIdx,mwTicketMotivoIdx,activeModule]);
   if(authLoading)return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#F8FAFC",gap:10,color:"#64748B",fontFamily:"'JetBrains Mono',monospace",fontSize:13}}><Loader2 size={18} className="spin"/> Verificando sesión…</div>);
   if(isRecovery)return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#F8FAFC"}}>
