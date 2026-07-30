@@ -428,6 +428,7 @@ function App(){
   const CALENDAR_FN=`${SUPABASE_URL}/functions/v1/calendar-events`;
   const CHAT_FN=`${SUPABASE_URL}/functions/v1/chat-alerts`;
   const OPS_FN=`${SUPABASE_URL}/functions/v1/alertas-operativas`;
+  const AVINST_FN=`${SUPABASE_URL}/functions/v1/avance-instalaciones`;
   const DIRECTORY_FN=`${SUPABASE_URL}/functions/v1/directory-photo`;
   const ODOO_FN=`${SUPABASE_URL}/functions/v1/odoo-orders`;
   const MW_FN=`${SUPABASE_URL}/functions/v1/mikrowisp-datos`;
@@ -497,6 +498,10 @@ function App(){
   const [avance,setAvance]=useState({tk:[],inst:[]});
   const [avanceLoading,setAvanceLoading]=useState(false);
   const [avanceError,setAvanceError]=useState(null);
+  // Informe detallado de instalaciones del día (MikroWisp API: técnico, Puerto OLT, equipo, router).
+  const [avInst,setAvInst]=useState([]);
+  const [avInstLoading,setAvInstLoading]=useState(false);
+  const [avInstError,setAvInstError]=useState(null);
   useEffect(()=>{if(activeModule!=="agenda")return;setCalLoading(true);setCalError(null);fetch(CALENDAR_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({year:calYear,month:calMonth})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setCalEvents(d.events||[]);}).catch(e=>setCalError(e.message)).finally(()=>setCalLoading(false));},[activeModule,calYear,calMonth,session]);
   useEffect(()=>{if(activeModule!=="odoo")return;setOdooLoading(true);setOdooError(null);fetch(ODOO_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"list_orders"})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setOdooOrders(d.orders||[]);setOdooStages(d.stages||[]);}).catch(e=>setOdooError(e.message)).finally(()=>setOdooLoading(false));},[activeModule,session]);
   useEffect(()=>{if(activeModule!=="mw_instalaciones")return;setMwInstLoading(true);setMwInstError(null);const qs=new URLSearchParams({modulo:"instalaciones"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwInstData(d.instalaciones||[]);}).catch(e=>setMwInstError(e.message)).finally(()=>setMwInstLoading(false));},[activeModule,mwDesde,mwHasta,session]);
@@ -505,6 +510,7 @@ function App(){
     fetch(`${MW_FN}?modulo=tickets_cerrados&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()),
     fetch(`${MW_FN}?modulo=instalaciones&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json())
   ]).then(([tc,ins])=>{if(tc.error)throw new Error(tc.error);if(ins.error)throw new Error(ins.error);setAvance({tk:tc.tickets_cerrados||[],inst:(ins.instalaciones||[]).filter(x=>x.instalado==="INSTALADO")});}).catch(e=>setAvanceError(e.message)).finally(()=>setAvanceLoading(false));},[activeModule,session]);
+  useEffect(()=>{if(activeModule!=="avance")return;setAvInstLoading(true);setAvInstError(null);fetch(AVINST_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setAvInst(d.instalaciones||[]);}).catch(e=>setAvInstError(e.message)).finally(()=>setAvInstLoading(false));},[activeModule,session]);
   // Tickets de MikroWisp (con motivo_asunto e id_cliente) para enriquecer la
   // etiqueta de reincidencia con el asunto real del ticket de seguimiento.
   const [mwReincTk,setMwReincTk]=useState([]);
@@ -2403,8 +2409,34 @@ function App(){
                     </tbody>
                   </table>
                 </div>)}
-                <div style={{marginTop:10,fontSize:11,color:"var(--text-dim)"}}>En vivo desde MikroWisp · se actualiza al entrar o recargar. El técnico se agregará después con la BD Agenda.</div>
+                <div style={{marginTop:10,fontSize:11,color:"var(--text-dim)"}}>En vivo desde MikroWisp · se actualiza al entrar o recargar.</div>
               </div>
+            </div>
+            <div style={{marginTop:8}}>
+              <div className="activos-card-header" style={{marginBottom:10}}>
+                <div className="activos-card-title">Instalaciones del día · detalle</div>
+                <div className="activos-badge">{avInst.length}</div>
+              </div>
+              {avInstLoading?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Cargando instalaciones… (consulta a MikroWisp, puede tardar unos segundos)</div>):
+               avInstError?(<div style={{padding:24,textAlign:"center",color:"var(--critical)",fontSize:13}}>Error: {avInstError}</div>):
+               avInst.length===0?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Sin instalaciones realizadas hoy.</div>):(
+              <div className="odoo-table-wrap">
+                <table className="odoo-table">
+                  <thead><tr><th>Id</th><th>Nombre</th><th>Dirección principal</th><th>Zona</th><th>Instalado</th><th>Técnico instalador</th><th>Plan</th><th>Puerto OLT</th><th>Router</th></tr></thead>
+                  <tbody>{avInst.map((r,i)=>(<tr key={i}>
+                    <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{r.id}</td>
+                    <td style={{fontWeight:500,whiteSpace:"nowrap"}}>{r.nombre}</td>
+                    <td style={{fontSize:11,color:"var(--text-muted)",maxWidth:220,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={r.direccion_principal}>{r.direccion_principal}</td>
+                    <td style={{whiteSpace:"nowrap"}}>{r.zona}</td>
+                    <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,whiteSpace:"nowrap"}}>{r.instalado?new Date(r.instalado).toLocaleDateString("es-MX"):"-"}</td>
+                    <td style={{whiteSpace:"nowrap",color:"var(--signal)",fontWeight:500}}>{r.tecnico_instalador||"-"}</td>
+                    <td style={{fontSize:11,maxWidth:180,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={r.plan}>{r.plan||"-"}</td>
+                    <td style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}} title={r.puerto_olt}>{r.puerto_olt||"-"}</td>
+                    <td style={{fontSize:11,whiteSpace:"nowrap"}}><div>{r.equipo_instalado||"-"}</div>{r.router_red&&<div style={{color:"var(--text-dim)"}}>{r.router_red}</div>}</td>
+                  </tr>))}</tbody>
+                </table>
+              </div>)}
+              <div style={{marginTop:10,fontSize:11,color:"var(--text-dim)"}}>Técnico instalador, Puerto OLT (incluye caja NAP), equipo y router de red vía API de MikroWisp.</div>
             </div>
           </div>
         ):activeModule==="agentes"?(
