@@ -333,7 +333,7 @@ function App(){
   const [promMinOrd,setPromMinOrd]=useState(40);
   const [mwInstZonaFilter,setMwInstZonaFilter]=useState("");
   const [mwTicketZonaFilter,setMwTicketZonaFilter]=useState("");
-  const [mwTicketEstadoFilter,setMwTicketEstadoFilter]=useState("abierto");
+  const [mwTicketEstadoFilter,setMwTicketEstadoFilter]=useState("");
   const [mwInstEstadoFilter,setMwInstEstadoFilter]=useState("PENDIENTE");
   const [mwInstData,setMwInstData]=useState([]);
   const [mwInstLoading,setMwInstLoading]=useState(false);
@@ -2142,18 +2142,9 @@ function App(){
               <button className="btn btn-ghost" onClick={()=>{setMwDia("");setMwMes("");setMwAnio("");setMwDesde("");setMwHasta("");}}>Ver todo el histórico</button>
             </div>
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-              <div className="range-toggle">
-                <button className={`range-btn${mwTicketEstadoFilter===""?" active":""}`} onClick={()=>setMwTicketEstadoFilter("")}>Todos</button>
-                <button className={`range-btn${mwTicketEstadoFilter==="abierto"?" active":""}`} onClick={()=>setMwTicketEstadoFilter("abierto")}>Abiertos</button>
-                <button className={`range-btn${mwTicketEstadoFilter==="cerrado"?" active":""}`} onClick={()=>setMwTicketEstadoFilter("cerrado")}>Cerrados</button>
-              </div>
               <select className="odoo-select" value={mwMotivoFilter} onChange={e=>setMwMotivoFilter(e.target.value)}>
                 <option value="">Todos los motivos/asuntos</option>
                 {motivosUnicos.map(m=>(<option key={m.key} value={m.key}>{m.label}</option>))}
-              </select>
-              <select className="odoo-select" value={mwTicketZonaFilter} onChange={e=>setMwTicketZonaFilter(e.target.value)}>
-                <option value="">Todas las zonas</option>
-                {mwTicketsZonas.map(z=>(<option key={z} value={z}>{z}</option>))}
               </select>
               <input className="odoo-search" style={{marginLeft:"auto",minWidth:220}} type="text" placeholder="Buscar por nombre o motivo…" value={mwSearch} onChange={e=>setMwSearch(e.target.value)}/>
             </div>
