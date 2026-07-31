@@ -511,6 +511,10 @@ function App(){
   useEffect(()=>{if(activeModule!=="odoo")return;setOdooLoading(true);setOdooError(null);fetch(ODOO_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"list_orders"})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setOdooOrders(d.orders||[]);setOdooStages(d.stages||[]);}).catch(e=>setOdooError(e.message)).finally(()=>setOdooLoading(false));},[activeModule,session]);
   useEffect(()=>{if(activeModule!=="mw_instalaciones")return;setMwInstLoading(true);setMwInstError(null);const qs=new URLSearchParams({modulo:"instalaciones"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwInstData(d.instalaciones||[]);}).catch(e=>setMwInstError(e.message)).finally(()=>setMwInstLoading(false));},[activeModule,mwDesde,mwHasta,session]);
   useEffect(()=>{if(activeModule!=="mw_tickets")return;setMwTicketsLoading(true);setMwTicketsError(null);const qs=new URLSearchParams({modulo:"tickets"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwTicketsData(d.tickets||[]);}).catch(e=>setMwTicketsError(e.message)).finally(()=>setMwTicketsLoading(false));},[activeModule,mwDesde,mwHasta,session]);
+  // Tickets de MikroWisp para el submódulo Tickets del dashboard: se traen desde el
+  // inicio del mes seleccionado (incluye abiertos y cerrados); el resumen filtra por
+  // fecha_generado dentro del mes.
+  useEffect(()=>{if(!(activeModule==="dashboard"&&tipoFilter==="Ticket"))return;const mm=String(month).padStart(2,"0");setDashTkLoading(true);setDashTkError(null);fetch(`${MW_FN}?modulo=tickets&desde=2026-${mm}-01`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setDashTk(d.tickets||[]);}).catch(e=>setDashTkError(e.message)).finally(()=>setDashTkLoading(false));},[activeModule,tipoFilter,month,session]);
   useEffect(()=>{if(activeModule!=="avance")return;const hoy=new Date().toLocaleDateString("en-CA",{timeZone:"America/Chihuahua"});setAvanceLoading(true);setAvanceError(null);Promise.all([
     fetch(`${MW_FN}?modulo=tickets_cerrados&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()),
     fetch(`${MW_FN}?modulo=instalaciones&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json())
@@ -587,6 +591,9 @@ function App(){
   const [mwTicketsPage,setMwTicketsPage]=useState(1);
   const [mwResumenPage,setMwResumenPage]=useState(1);
   const [mwResumenGenPage,setMwResumenGenPage]=useState(1);
+  const [dashTk,setDashTk]=useState([]);
+  const [dashTkLoading,setDashTkLoading]=useState(false);
+  const [dashTkError,setDashTkError]=useState(null);
   const mwInstRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
     return mwInstData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.direccion_principal||"").toLowerCase().includes(q))&&(!mwInstEstadoFilter||r.instalado===mwInstEstadoFilter)&&(!mwInstZonaFilter||r.zona===mwInstZonaFilter));
@@ -640,11 +647,16 @@ function App(){
     })).sort((a,b)=>b.total-a.total||a.zona.localeCompare(b.zona,"es"));
     return{zonas,total};
   },[mwTicketsData]);
-  // Igual que el anterior pero sobre TODOS los tickets (generados), no solo abiertos.
-  const mwTicketsResumenGenerados=useMemo(()=>{
-    const total=mwTicketsData.length;
+  // Tickets de MikroWisp (abiertos+cerrados) GENERADOS en el mes seleccionado del
+  // dashboard, agrupados por zona y asunto. Filtra por fecha_generado dentro del mes
+  // (el fetch trae desde el inicio del mes; aquí se acota a los generados en él).
+  const dashTkResumen=useMemo(()=>{
+    if(!(activeModule==="dashboard"&&tipoFilter==="Ticket"))return{zonas:[],total:0};
+    const mm=String(month).padStart(2,"0");
+    const gen=dashTk.filter(r=>{const f=r.fecha_generado?String(r.fecha_generado).slice(0,7):"";return f===`2026-${mm}`;});
+    const total=gen.length;
     const zonaMap=new Map();
-    mwTicketsData.forEach(r=>{
+    gen.forEach(r=>{
       const zona=r.zona||"Sin zona";
       const motivoKey=mwNormMotivo(r.motivo_asunto)||"(sin motivo)";
       const motivoLabel=r.motivo_asunto||"Sin motivo/asunto";
@@ -655,7 +667,7 @@ function App(){
     });
     const zonas=[...zonaMap.values()].map(z=>({zona:z.zona,total:z.total,pctTotal:total>0?(z.total/total*100):0,motivos:[...z.motivos.values()].map(m=>({motivo:m.motivo,cantidad:m.cantidad,pctZona:z.total>0?(m.cantidad/z.total*100):0,pctTotal:total>0?(m.cantidad/total*100):0})).sort((a,b)=>b.cantidad-a.cantidad||a.motivo.localeCompare(b.motivo,"es"))})).sort((a,b)=>b.total-a.total||a.zona.localeCompare(b.zona,"es"));
     return{zonas,total};
-  },[mwTicketsData]);
+  },[dashTk,month,activeModule,tipoFilter]);
   const mwTicketsRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
     return mwTicketsData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.motivo_asunto||"").toLowerCase().includes(q))&&(!mwMotivoFilter||mwNormMotivo(r.motivo_asunto)===mwMotivoFilter)&&(!mwTicketEstadoFilter||(mwTicketEstadoFilter==="cerrado"?r.estado==="cerrado":r.estado!=="cerrado"))&&(!mwTicketZonaFilter||r.zona===mwTicketZonaFilter));
@@ -679,7 +691,7 @@ function App(){
   },[data,activeModule]);
   useEffect(()=>{setMwTicketsPage(1);},[mwTicketsRows]);
   useEffect(()=>{setMwResumenPage(1);},[mwTicketsResumenAbiertos]);
-  useEffect(()=>{setMwResumenGenPage(1);},[mwTicketsResumenGenerados]);
+  useEffect(()=>{setMwResumenGenPage(1);},[dashTkResumen]);
   const asigActivasSet=useMemo(()=>new Set(asigList.filter(a=>!ESTADOS_TERMINALES.has(a.estatus)).map(a=>`${a.tipo}|${a.orden_id}`)),[asigList,ESTADOS_TERMINALES]);
   const asigPendientes=useMemo(()=>{
     const q=asigSearch.trim().toLowerCase();
@@ -2206,42 +2218,6 @@ function App(){
                     </div>
                   );
                 })()}
-                {(()=>{
-                  const MW_RESUMEN_ZONAS_PAGE=10;
-                  const resumenZonas=mwTicketsResumenGenerados.zonas;
-                  const resumenTotal=mwTicketsResumenGenerados.total;
-                  const resumenTotalPages=Math.max(1,Math.ceil(resumenZonas.length/MW_RESUMEN_ZONAS_PAGE));
-                  const resumenPageSafe=Math.min(mwResumenGenPage,resumenTotalPages);
-                  const resumenPageZonas=resumenZonas.slice((resumenPageSafe-1)*MW_RESUMEN_ZONAS_PAGE,resumenPageSafe*MW_RESUMEN_ZONAS_PAGE);
-                  return(
-                    <div style={{marginBottom:20}}>
-                      <div className="chart-title" style={{marginBottom:8}}>Tickets generados por zona y motivo</div>
-                      <div className="odoo-table-wrap">
-                        <table className="odoo-table">
-                          <thead><tr><th>Zona</th><th>Motivo/Asunto</th><th>Cantidad</th><th>% de la zona</th><th>% del total generados</th></tr></thead>
-                          <tbody>{resumenPageZonas.map(z=>z.motivos.map((m,i)=>(
-                            <tr key={`${z.zona}|${m.motivo}|${i}`}>
-                              {i===0&&<td rowSpan={z.motivos.length} style={{fontSize:12,fontWeight:600,verticalAlign:"top",borderRight:"1px solid var(--border)"}}>{z.zona}<div style={{fontSize:11,fontWeight:400,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{numFmt(z.total)} · {z.pctTotal.toFixed(1)}% del total</div></td>}
-                              <td style={{fontSize:12,color:"var(--text-muted)"}}>{m.motivo}</td>
-                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600}}>{numFmt(m.cantidad)}</td>
-                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctZona.toFixed(1)}%</td>
-                              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctTotal.toFixed(1)}%</td>
-                            </tr>
-                          )))}</tbody>
-                        </table>
-                        {resumenZonas.length===0&&<div style={{padding:"32px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No hay tickets en el período/filtro seleccionado.</div>}
-                      </div>
-                      {resumenZonas.length>MW_RESUMEN_ZONAS_PAGE&&(
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
-                          <button className="btn btn-ghost" disabled={resumenPageSafe<=1} onClick={()=>setMwResumenGenPage(p=>Math.max(1,p-1))}>← Anterior</button>
-                          <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Página {resumenPageSafe} de {resumenTotalPages}</span>
-                          <button className="btn btn-ghost" disabled={resumenPageSafe>=resumenTotalPages} onClick={()=>setMwResumenGenPage(p=>Math.min(resumenTotalPages,p+1))}>Siguiente →</button>
-                          <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginLeft:"auto"}}>{resumenZonas.length} zonas · {numFmt(resumenTotal)} tickets generados</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
                 <div className="odoo-table-wrap">
                   <table className="odoo-table">
                     <thead><tr><th>ID</th><th>Nombre</th><th>Fecha generado</th><th>Fecha cierre</th><th>Estado</th><th>Zona</th><th>Motivo/Asunto</th></tr></thead>
@@ -2783,6 +2759,44 @@ function App(){
               </div>
             )}
           </div>)}
+          {tipoFilter==="Ticket"&&(()=>{
+            const MW_RESUMEN_ZONAS_PAGE=10;
+            const resumenZonas=dashTkResumen.zonas;
+            const resumenTotal=dashTkResumen.total;
+            const resumenTotalPages=Math.max(1,Math.ceil(resumenZonas.length/MW_RESUMEN_ZONAS_PAGE));
+            const resumenPageSafe=Math.min(mwResumenGenPage,resumenTotalPages);
+            const resumenPageZonas=resumenZonas.slice((resumenPageSafe-1)*MW_RESUMEN_ZONAS_PAGE,resumenPageSafe*MW_RESUMEN_ZONAS_PAGE);
+            return(
+              <div className="chart-card" style={{gridColumn:"1 / -1",marginTop:28}}>
+                <div className="chart-title" style={{marginBottom:8}}>Tickets generados por zona y motivo — {currentMonthLabel} (MikroWisp · abiertos y cerrados)</div>
+                {dashTkLoading?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Cargando tickets desde MikroWisp…</div>):
+                 dashTkError?(<div style={{padding:24,textAlign:"center",color:"var(--critical)",fontSize:13}}>Error: {dashTkError}</div>):
+                 resumenZonas.length===0?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Sin tickets generados en el mes.</div>):(
+                <div className="odoo-table-wrap">
+                  <table className="odoo-table">
+                    <thead><tr><th>Zona</th><th>Motivo/Asunto</th><th>Cantidad</th><th>% de la zona</th><th>% del total</th></tr></thead>
+                    <tbody>{resumenPageZonas.map(z=>z.motivos.map((m,i)=>(
+                      <tr key={`${z.zona}|${m.motivo}|${i}`}>
+                        {i===0&&<td rowSpan={z.motivos.length} style={{fontSize:12,fontWeight:600,verticalAlign:"top",borderRight:"1px solid var(--border)"}}>{z.zona}<div style={{fontSize:11,fontWeight:400,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{numFmt(z.total)} · {z.pctTotal.toFixed(1)}% del total</div></td>}
+                        <td style={{fontSize:12,color:"var(--text-muted)"}}>{m.motivo}</td>
+                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600}}>{numFmt(m.cantidad)}</td>
+                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctZona.toFixed(1)}%</td>
+                        <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctTotal.toFixed(1)}%</td>
+                      </tr>
+                    )))}</tbody>
+                  </table>
+                </div>)}
+                {resumenZonas.length>MW_RESUMEN_ZONAS_PAGE&&(
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
+                    <button className="btn btn-ghost" disabled={resumenPageSafe<=1} onClick={()=>setMwResumenGenPage(p=>Math.max(1,p-1))}>← Anterior</button>
+                    <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Página {resumenPageSafe} de {resumenTotalPages}</span>
+                    <button className="btn btn-ghost" disabled={resumenPageSafe>=resumenTotalPages} onClick={()=>setMwResumenGenPage(p=>Math.min(resumenTotalPages,p+1))}>Siguiente →</button>
+                    <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginLeft:"auto"}}>{resumenZonas.length} zonas · {numFmt(resumenTotal)} tickets</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="chart-grid">
             <div className="chart-card" style={{gridColumn:"1 / -1",marginTop:28}}><div className="chart-title">Cumplimiento por tipo de orden — Últimos 4 meses (%)</div><ResponsiveContainer width="100%" height={280}><BarChart data={cumplimiento3MesesData} margin={{top:14,right:20,bottom:10,left:10}} barGap={4} barCategoryGap="28%"><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="mes" stroke="var(--text-dim)" fontSize={12} tickLine={false}/><YAxis stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={36} domain={[0,100]} tickFormatter={v=>`${v}%`}/><Tooltip contentStyle={tooltipStyle} formatter={v=>[`${v}%`,"Cumplimiento"]}/><Legend wrapperStyle={{fontSize:12}}/>{(tipoFilter==="todas"||tipoFilter==="Instalación")&&<Bar dataKey="Instalación" name="Instalación" fill="#94A3B8" maxBarSize={48} radius={[4,4,0,0]}>{cumplimiento3MesesData.map((e,i)=>(<Cell key={i} fill={semaforoGrad(e.Instalación)}/>))}<LabelList dataKey="Instalación" position="top" offset={6} fontSize={10} fill="var(--chart-label)" formatter={v=>`${v}%`}/></Bar>}{(tipoFilter==="todas"||tipoFilter==="Ticket")&&<Bar dataKey="Ticket" name="Ticket" fill="#94A3B8" maxBarSize={48} radius={[4,4,0,0]}>{cumplimiento3MesesData.map((e,i)=>(<Cell key={i} fill={semaforoGrad(e.Ticket)}/>))}<LabelList dataKey="Ticket" position="top" offset={6} fontSize={10} fill="var(--chart-label)" formatter={v=>`${v}%`}/></Bar>}</BarChart></ResponsiveContainer></div>
             {(tipoFilter==="todas"||tipoFilter==="Instalación")&&(<ChartCardM title="Instalaciones realizadas — Últimos 4 meses" height={260}><BarChart data={instalaciones3MesesData} margin={{top:10,right:20,bottom:10,left:10}}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="mes" stroke="var(--text-dim)" fontSize={12} tickLine={false}/><YAxis stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} width={36}/><Tooltip contentStyle={tooltipStyle} formatter={v=>[v,"Instalaciones realizadas"]}/><Bar dataKey="realizadas" name="Realizadas" fill="url(#gradSignal)" radius={[4,4,0,0]}><LabelList dataKey="realizadas" position="top" fontSize={12} fontWeight={600} fill="var(--text-muted)"/></Bar></BarChart></ChartCardM>)}
