@@ -326,6 +326,8 @@ function App(){
   const [mwResAbiertos,setMwResAbiertos]=useState(true);
   const [mwResCerrados,setMwResCerrados]=useState(true);
   const [mwResMes,setMwResMes]=useState("");
+  const [mwResZonas,setMwResZonas]=useState([]);
+  const [mwResZonasOpen,setMwResZonasOpen]=useState(false);
   const [matrizMotivo,setMatrizMotivo]=useState("");
   const [matrizMinVol,setMatrizMinVol]=useState(30);
   const [promMinOrd,setPromMinOrd]=useState(40);
@@ -516,10 +518,6 @@ function App(){
   useEffect(()=>{if(activeModule!=="odoo")return;setOdooLoading(true);setOdooError(null);fetch(ODOO_FN,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session?.access_token}`},body:JSON.stringify({action:"list_orders"})}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setOdooOrders(d.orders||[]);setOdooStages(d.stages||[]);}).catch(e=>setOdooError(e.message)).finally(()=>setOdooLoading(false));},[activeModule,session]);
   useEffect(()=>{if(activeModule!=="mw_instalaciones")return;setMwInstLoading(true);setMwInstError(null);const qs=new URLSearchParams({modulo:"instalaciones"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwInstData(d.instalaciones||[]);}).catch(e=>setMwInstError(e.message)).finally(()=>setMwInstLoading(false));},[activeModule,mwDesde,mwHasta,session]);
   useEffect(()=>{if(activeModule!=="mw_tickets")return;setMwTicketsLoading(true);setMwTicketsError(null);const qs=new URLSearchParams({modulo:"tickets"});if(mwDesde)qs.set("desde",mwDesde);if(mwHasta)qs.set("hasta",mwHasta);fetch(`${MW_FN}?${qs.toString()}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setMwTicketsData(d.tickets||[]);}).catch(e=>setMwTicketsError(e.message)).finally(()=>setMwTicketsLoading(false));},[activeModule,mwDesde,mwHasta,session]);
-  // Tickets de MikroWisp para el submódulo Tickets del dashboard: se traen desde el
-  // inicio del mes seleccionado (incluye abiertos y cerrados); el resumen filtra por
-  // fecha_generado dentro del mes.
-  useEffect(()=>{if(!(activeModule==="dashboard"&&tipoFilter==="Ticket"))return;const mm=String(month).padStart(2,"0");setDashTkLoading(true);setDashTkError(null);fetch(`${MW_FN}?modulo=tickets&desde=2026-${mm}-01`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()).then(d=>{if(d.error)throw new Error(d.error);setDashTk(d.tickets||[]);}).catch(e=>setDashTkError(e.message)).finally(()=>setDashTkLoading(false));},[activeModule,tipoFilter,month,session]);
   useEffect(()=>{if(activeModule!=="avance")return;const hoy=new Date().toLocaleDateString("en-CA",{timeZone:"America/Chihuahua"});setAvanceLoading(true);setAvanceError(null);Promise.all([
     fetch(`${MW_FN}?modulo=tickets_cerrados&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json()),
     fetch(`${MW_FN}?modulo=instalaciones&desde=${hoy}&hasta=${hoy}`,{headers:{"Authorization":`Bearer ${session?.access_token}`}}).then(r=>r.json())
@@ -595,11 +593,6 @@ function App(){
   const [mwInstPage,setMwInstPage]=useState(1);
   const [mwTicketsPage,setMwTicketsPage]=useState(1);
   const [mwResumenPage,setMwResumenPage]=useState(1);
-  const [mwResumenGenPage,setMwResumenGenPage]=useState(1);
-  const [dashTk,setDashTk]=useState([]);
-  const [dashTkLoading,setDashTkLoading]=useState(false);
-  const [dashTkError,setDashTkError]=useState(null);
-  const [dashTkZonas,setDashTkZonas]=useState([]);
   const mwInstRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
     return mwInstData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.direccion_principal||"").toLowerCase().includes(q))&&(!mwInstEstadoFilter||r.instalado===mwInstEstadoFilter)&&(!mwInstZonaFilter||r.zona===mwInstZonaFilter));
@@ -658,27 +651,6 @@ function App(){
     })).sort((a,b)=>b.total-a.total||a.zona.localeCompare(b.zona,"es"));
     return{zonas,total};
   },[mwTicketsData,mwResAbiertos,mwResCerrados,mwResMes]);
-  // Tickets de MikroWisp (abiertos+cerrados) GENERADOS en el mes seleccionado del
-  // dashboard, agrupados por zona y asunto. Filtra por fecha_generado dentro del mes
-  // (el fetch trae desde el inicio del mes; aquí se acota a los generados en él).
-  const dashTkResumen=useMemo(()=>{
-    if(!(activeModule==="dashboard"&&tipoFilter==="Ticket"))return{zonas:[],total:0};
-    const mm=String(month).padStart(2,"0");
-    const gen=dashTk.filter(r=>{const f=r.fecha_generado?String(r.fecha_generado).slice(0,7):"";return f===`2026-${mm}`;});
-    const total=gen.length;
-    const zonaMap=new Map();
-    gen.forEach(r=>{
-      const zona=r.zona||"Sin zona";
-      const motivoKey=mwNormMotivo(r.motivo_asunto)||"(sin motivo)";
-      const motivoLabel=r.motivo_asunto||"Sin motivo/asunto";
-      if(!zonaMap.has(zona))zonaMap.set(zona,{zona,total:0,motivos:new Map()});
-      const z=zonaMap.get(zona);z.total++;
-      if(!z.motivos.has(motivoKey))z.motivos.set(motivoKey,{motivo:motivoLabel,cantidad:0});
-      z.motivos.get(motivoKey).cantidad++;
-    });
-    const zonas=[...zonaMap.values()].map(z=>({zona:z.zona,total:z.total,pctTotal:total>0?(z.total/total*100):0,motivos:[...z.motivos.values()].map(m=>({motivo:m.motivo,cantidad:m.cantidad,pctZona:z.total>0?(m.cantidad/z.total*100):0,pctTotal:total>0?(m.cantidad/total*100):0})).sort((a,b)=>b.cantidad-a.cantidad||a.motivo.localeCompare(b.motivo,"es"))})).sort((a,b)=>b.total-a.total||a.zona.localeCompare(b.zona,"es"));
-    return{zonas,total};
-  },[dashTk,month,activeModule,tipoFilter]);
   const mwTicketsRows=useMemo(()=>{
     const q=mwSearch.trim().toLowerCase();
     return mwTicketsData.filter(r=>(!q||(r.nombre||"").toLowerCase().includes(q)||(r.motivo_asunto||"").toLowerCase().includes(q))&&(!mwMotivoFilter||mwNormMotivo(r.motivo_asunto)===mwMotivoFilter)&&(!mwTicketEstadoFilter||(mwTicketEstadoFilter==="cerrado"?r.estado==="cerrado":r.estado!=="cerrado"))&&(!mwTicketZonaFilter||r.zona===mwTicketZonaFilter));
@@ -702,7 +674,6 @@ function App(){
   },[data,activeModule]);
   useEffect(()=>{setMwTicketsPage(1);},[mwTicketsRows]);
   useEffect(()=>{setMwResumenPage(1);},[mwTicketsResumenAbiertos]);
-  useEffect(()=>{setMwResumenGenPage(1);},[dashTkResumen]);
   const asigActivasSet=useMemo(()=>new Set(asigList.filter(a=>!ESTADOS_TERMINALES.has(a.estatus)).map(a=>`${a.tipo}|${a.orden_id}`)),[asigList,ESTADOS_TERMINALES]);
   const asigPendientes=useMemo(()=>{
     const q=asigSearch.trim().toLowerCase();
@@ -2195,8 +2166,10 @@ function App(){
                 </div>
                 {(()=>{
                   const MW_RESUMEN_ZONAS_PAGE=10;
-                  const resumenZonas=mwTicketsResumenAbiertos.zonas;
-                  const resumenTotal=mwTicketsResumenAbiertos.total;
+                  const resumenAll=mwTicketsResumenAbiertos.zonas;
+                  const resumenZonas=mwResZonas.length?resumenAll.filter(z=>mwResZonas.includes(z.zona)):resumenAll;
+                  const resumenTotal=resumenZonas.reduce((s,z)=>s+z.total,0);
+                  const toggleResZona=z=>setMwResZonas(prev=>prev.includes(z)?prev.filter(x=>x!==z):[...prev,z]);
                   const resumenTotalPages=Math.max(1,Math.ceil(resumenZonas.length/MW_RESUMEN_ZONAS_PAGE));
                   const resumenPageSafe=Math.min(mwResumenPage,resumenTotalPages);
                   const resumenPageZonas=resumenZonas.slice((resumenPageSafe-1)*MW_RESUMEN_ZONAS_PAGE,resumenPageSafe*MW_RESUMEN_ZONAS_PAGE);
@@ -2210,6 +2183,17 @@ function App(){
                           <option value="">Mes de generación: todos</option>
                           {MONTH_OPTIONS.map(o=>(<option key={o.key} value={o.key}>Generados en {o.label}</option>))}
                         </select>
+                        <div style={{position:"relative"}}>
+                          <button className={`range-btn${mwResZonas.length?" active":""}`} onClick={()=>setMwResZonasOpen(v=>!v)}>Zonas: {mwResZonas.length?`${mwResZonas.length} sel.`:"todas"} ▾</button>
+                          {mwResZonasOpen&&(<div style={{position:"absolute",zIndex:50,top:"calc(100% + 4px)",left:0,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,.18)",padding:8,maxHeight:300,overflowY:"auto",minWidth:210}}>
+                            <div style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:6}}>
+                              <button className="range-btn" onClick={()=>setMwResZonas([])}>Limpiar</button>
+                              <button className="range-btn" onClick={()=>setMwResZonasOpen(false)}>Cerrar ✕</button>
+                            </div>
+                            {mwTicketsZonas.map(z=>(<label key={z} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 4px",fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}><input type="checkbox" checked={mwResZonas.includes(z)} onChange={()=>toggleResZona(z)}/>{z}</label>))}
+                            {mwTicketsZonas.length===0&&<div style={{fontSize:12,color:"var(--text-dim)",padding:4}}>Sin zonas</div>}
+                          </div>)}
+                        </div>
                       </div>
                       <div className="odoo-table-wrap">
                         <table className="odoo-table">
@@ -2921,52 +2905,6 @@ function App(){
                 </ResponsiveContainer>
               </div>
             )}
-            {tipoFilter==="Ticket"&&(()=>{
-              const MW_RESUMEN_ZONAS_PAGE=10;
-              const allZonas=dashTkResumen.zonas;
-              const filtZonas=dashTkZonas.length?allZonas.filter(z=>dashTkZonas.includes(z.zona)):allZonas;
-              const resumenTotal=filtZonas.reduce((s,z)=>s+z.total,0);
-              const resumenTotalPages=Math.max(1,Math.ceil(filtZonas.length/MW_RESUMEN_ZONAS_PAGE));
-              const resumenPageSafe=Math.min(mwResumenGenPage,resumenTotalPages);
-              const resumenPageZonas=filtZonas.slice((resumenPageSafe-1)*MW_RESUMEN_ZONAS_PAGE,resumenPageSafe*MW_RESUMEN_ZONAS_PAGE);
-              const toggleZona=z=>setDashTkZonas(prev=>prev.includes(z)?prev.filter(x=>x!==z):[...prev,z]);
-              return(
-                <div className="chart-card" style={{gridColumn:"1 / -1"}}>
-                  <div className="chart-title" style={{marginBottom:8}}>Tickets generados por zona y motivo — {currentMonthLabel} (MikroWisp · abiertos y cerrados)</div>
-                  {dashTkLoading?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Cargando tickets desde MikroWisp…</div>):
-                   dashTkError?(<div style={{padding:24,textAlign:"center",color:"var(--critical)",fontSize:13}}>Error: {dashTkError}</div>):
-                   allZonas.length===0?(<div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Sin tickets generados en el mes.</div>):(<>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,alignItems:"center"}}>
-                    <span style={{fontSize:11.5,color:"var(--text-muted)",marginRight:2}}>Zonas:</span>
-                    <button className={`range-btn${dashTkZonas.length===0?" active":""}`} onClick={()=>setDashTkZonas([])}>Todas</button>
-                    {allZonas.map(z=>(<button key={z.zona} className={`range-btn${dashTkZonas.includes(z.zona)?" active":""}`} onClick={()=>toggleZona(z.zona)}>{z.zona}</button>))}
-                  </div>
-                  <div className="odoo-table-wrap">
-                    <table className="odoo-table">
-                      <thead><tr><th>Zona</th><th>Motivo/Asunto</th><th>Cantidad</th><th>% de la zona</th><th>% del total</th></tr></thead>
-                      <tbody>{resumenPageZonas.map(z=>z.motivos.map((m,i)=>(
-                        <tr key={`${z.zona}|${m.motivo}|${i}`}>
-                          {i===0&&<td rowSpan={z.motivos.length} style={{fontSize:12,fontWeight:600,verticalAlign:"top",borderRight:"1px solid var(--border)"}}>{z.zona}<div style={{fontSize:11,fontWeight:400,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{numFmt(z.total)} · {z.pctTotal.toFixed(1)}% del total</div></td>}
-                          <td style={{fontSize:12,color:"var(--text-muted)"}}>{m.motivo}</td>
-                          <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600}}>{numFmt(m.cantidad)}</td>
-                          <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctZona.toFixed(1)}%</td>
-                          <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"var(--text-dim)"}}>{m.pctTotal.toFixed(1)}%</td>
-                        </tr>
-                      )))}</tbody>
-                    </table>
-                  </div>
-                  {filtZonas.length>MW_RESUMEN_ZONAS_PAGE&&(
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
-                      <button className="btn btn-ghost" disabled={resumenPageSafe<=1} onClick={()=>setMwResumenGenPage(p=>Math.max(1,p-1))}>← Anterior</button>
-                      <span style={{fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>Página {resumenPageSafe} de {resumenTotalPages}</span>
-                      <button className="btn btn-ghost" disabled={resumenPageSafe>=resumenTotalPages} onClick={()=>setMwResumenGenPage(p=>Math.min(resumenTotalPages,p+1))}>Siguiente →</button>
-                    </div>
-                  )}
-                  <div style={{marginTop:8,fontSize:11,color:"var(--text-dim)",fontFamily:"'JetBrains Mono',monospace"}}>{filtZonas.length} zona(s) · {numFmt(resumenTotal)} tickets{dashTkZonas.length?" · filtrado":""}</div>
-                  </>)}
-                </div>
-              );
-            })()}
           </div>
         </>
       )}
