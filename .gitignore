@@ -1,0 +1,4 @@
+supabase/.temp/
+.claude/
+sync-mikrowisp/.env
+sync-mikrowisp/node_modules/
