@@ -130,7 +130,7 @@ function workingDaysInMonth(year,monthNum,throughDay){const daysInMonth=new Date
 // Excel): mismas fecha/tipo/estatus/técnico/agente/zona/motivo/imposibilidad/
 // días/cliente. Evita que los duplicados inflen conteos y denominadores.
 function dedupeOrdenes(rows){const seen=new Set();const out=[];for(const r of rows){const k=[r.fecha,r.tipo,r.estatus,r.tecnico,r.agente,r.zona,r.motivo,r.motivo_imposibilidad,r.dias_atencion,r.id_cliente,r.cliente].join("|");if(seen.has(k))continue;seen.add(k);out.push(r);}return out;}
-const MONTH_OPTIONS=[{key:"04",label:"Abril"},{key:"05",label:"Mayo"},{key:"06",label:"Junio"},{key:"07",label:"Julio"}];
+const MONTH_OPTIONS=(()=>{const labels=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];const now=new Date();const end=now.getFullYear()>2026?12:(now.getMonth()+1);const out=[];for(let m=4;m<=end;m++)out.push({key:String(m).padStart(2,"0"),label:labels[m-1]});return out;})();
 const TIPO_OPTIONS=[{key:"todas",label:"Todas"},{key:"Instalación",label:"Instalaciones"},{key:"Ticket",label:"Tickets"}];
 function promedioAtencion(rows,tipo){const vals=rows.filter(r=>r.tipo===tipo&&r.estatus==="Realizado"&&r.dias_atencion!==null&&r.dias_atencion!==undefined).map(r=>r.dias_atencion);if(!vals.length)return null;return vals.reduce((a,b)=>a+b,0)/vals.length;}
 function semaforoColor(pct){if(pct>=80)return"#22C55E";if(pct>=70)return"#EA580C";return"#DC2626";}
@@ -1185,11 +1185,13 @@ function App(){
   },[filtered,activeModule]);
   // Índice de tickets por cliente (todo el histórico, no solo el mes filtrado):
   // id_cliente -> [{day, fecha}] ordenado, para buscar reincidencias a 30 días.
+  // Solo tickets REALIZADOS (cerrados): un ticket "No realizado" (aún abierto/
+  // pendiente) no cuenta como reincidencia hasta que se cierra.
   const ticketsPorClienteIdx=useMemo(()=>{
     const m=new Map();
     if(activeModule!=="agentes")return m;
     data.forEach(r=>{
-      if(r.tipo!=="Ticket"||r.id_cliente==null)return;
+      if(r.tipo!=="Ticket"||r.estatus!=="Realizado"||r.id_cliente==null)return;
       const k=String(r.id_cliente).trim();
       if(!m.has(k))m.set(k,[]);
       m.get(k).push({day:dayNum(r.fecha),fecha:r.fecha});
